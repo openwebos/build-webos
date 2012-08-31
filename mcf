@@ -1,0 +1,774 @@
+#!/usr/bin/python3
+# Copyright (c) 2008-2013 LG Electronics, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+from __future__ import with_statement, print_function, unicode_literals, absolute_import, division
+
+import argparse
+import errno
+import logging
+import os
+import subprocess
+import sys
+import re
+import shlex
+from time import gmtime, strftime
+import shutil
+import glob
+
+
+logger = logging.getLogger(__name__)
+
+submodules = {}
+
+def echo_check_call(todo, verbosity, cwd=None):
+    if verbosity:
+        cmd = 'set -x; ' + todo
+    else:
+        cmd = todo
+
+    return subprocess.check_call(cmd,
+                                 stdout=sys.stdout,
+                                 stderr=sys.stderr,
+                                 shell=True,
+                                 cwd=cwd)
+def echo_cmd(cmd):
+    logger.debug(cmd)
+    return cmd
+
+def enable_debug():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    f = logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s', datefmt='%Y-%m-%dT%H:%M:%S')
+
+    s = logging.StreamHandler()
+    s.setLevel('DEBUG')
+
+    s.setFormatter(f)
+    logging.getLogger('').addHandler(s)
+
+# Essentially, mcf parses options, creates mcf.status, and runs mcf.status.
+
+def process_file(ifile, ofile, replacements):
+    statusfilename = ifile
+    statusfile = open(statusfilename, 'r')
+    status = statusfile.read()
+    statusfile.close()
+
+    for i, j in replacements:
+        status = status.replace(i, j)
+
+    statusfile = open(ofile, 'w')
+    statusfile.write(status)
+    statusfile.close()
+    return
+
+def getopts():
+    mcfcommand_option = '--command'
+    mcfcommand_dest = 'mcfcommand'
+    mcfcommand_choices = ['configure', 'update']
+    mcfcommand_default = 'configure'
+
+    # Just parse the --command argument here, so that we can select a parser
+    mcfcommand_parser = argparse.ArgumentParser(add_help=False)
+    mcfcommand_parser.add_argument(mcfcommand_option, dest=mcfcommand_dest, choices=mcfcommand_choices, default=mcfcommand_default)
+    mcfcommand_parser.add_argument('-x', '--trace', action='store_true', help='trace')
+    mcfcommand_parser_result = mcfcommand_parser.parse_known_args()
+    mcfcommand = mcfcommand_parser_result[0].mcfcommand
+    trace = mcfcommand_parser_result[0].trace
+    if trace:
+        enable_debug()
+
+    # Put --command back in (as the first option) so that the main parser sees everything
+    arglist = [mcfcommand_option, mcfcommand ] + mcfcommand_parser_result[1]
+
+    parser = argparse.ArgumentParser()
+
+    general = parser.add_argument_group('General Options')
+
+    verbosity = general.add_mutually_exclusive_group()
+
+    verbosity.add_argument('-s', '--silent', dest='verbose',
+                         action='store_false', default=False,
+                         help='work silently')
+
+    verbosity.add_argument('-v', '--verbose', dest='verbose',
+                       action='store_true', default=False,
+                       help='work verbosely')
+
+    general.add_argument('-x', '--trace', action='store_true', help='trace')
+
+    general.add_argument(mcfcommand_option, dest=mcfcommand_dest, choices=mcfcommand_choices, default=mcfcommand_default,
+                              help='command to mcf; if update is given, none of the remaining options nor MACHINE can be specified (default: %(default)s)')
+
+    if mcfcommand == 'configure':
+        variations = parser.add_argument_group('Build Instructions')
+
+        variations.add_argument('-p', '--enable-parallel-make', dest='parallel_make', type=int, default=1,
+                                help='maximum number of parallel tasks each submake of bitbake should spawn (default: 1)')
+
+        variations.add_argument('-b', '--enable-bb-number-threads', dest='bb_number_threads', type=int, default=1,
+                                help='maximum number of bitbake tasks to spawn (default: 1)')
+
+        partitions = parser.add_argument_group('Source Identification')
+
+        mirrors = parser.add_argument_group('Networking and Mirrors')
+
+        network = mirrors.add_mutually_exclusive_group()
+
+        network.add_argument('--disable-network', dest='network', action='store_false', default=True,
+                             help='disable fetching through the network (default: False)')
+
+        network.add_argument('--enable-network', dest='network', action='store_true', default=True,
+                             help='enable fetching through the network (default: True)')
+
+        # use shorter form without --enable prefix, --disable variant doesn't make sense, because it's disabled by default
+        # option in autoconf's configure.ac is named --enable-sstatemirror (because it's created with AC_ARG_ENABLE macro)
+        mirrors.add_argument('--sstatemirror', dest='sstatemirror', action='append',
+                             help='set sstatemirror to specified URL, repeat this option if you want multiple sstate mirrors (default: None)')
+
+        premirrorurl = mirrors.add_mutually_exclusive_group()
+        default_premirror = 'http://downloads.yoctoproject.org/mirror/sources'
+        premirrorurl.add_argument('--enable-default-premirror', dest='premirror', action='store_const', const=default_premirror, default="",
+                                  help='enable default premirror URL (default: False)')
+        # allow shorter form without --enable prefix, --disable variant doesn't make sense, because it's disabled by default
+        # but keep also variant with --enable prefix so that we don't have to update config in existing jenkins jobs
+        # option in autoconf's configure.ac is named --enable-premirror (because it's created with AC_ARG_ENABLE macro)
+        premirrorurl.add_argument('--premirror', '--enable-premirror', dest='premirror', default='',
+                                  help='set premirror to specified URL (default: None)')
+
+        premirroronly = mirrors.add_mutually_exclusive_group()
+        premirroronly.add_argument('--disable-fetch-premirror-only', dest='fetchpremirroronly', action='store_false', default=False,
+                                   help='disable fetching through the network (default: False)')
+
+        premirroronly.add_argument('--enable-fetch-premirror-only', dest='fetchpremirroronly', action='store_true', default=False,
+                                   help='enable fetching through the network (default: True)')
+
+        tarballs = mirrors.add_mutually_exclusive_group()
+        tarballs.add_argument('--disable-generate-mirror-tarballs', dest='generatemirrortarballs', action='store_false', default=False,
+                              help='disable tarball generation of fetched components (default: True)')
+
+        tarballs.add_argument('--enable-generate-mirror-tarballs', dest='generatemirrortarballs', action='store_true', default=False,
+                              help='generate tarballs suitable for mirroring (default: False)')
+
+        private = mirrors.add_mutually_exclusive_group()
+        private.add_argument('--disable-private-internal-component-mirror', dest='privateinternalcomponentmirror', action='store_false',
+                          default=False, help='disable the private internal component mirror (default: disabled)')
+
+        private.add_argument('--enable-private-internal-component-mirror', dest='privateinternalcomponentmirror', action='store_true',
+                          default=False, help='enable the private internal component mirror (default: disabled)')
+
+        buildhistory = parser.add_argument_group('Buildhistory')
+
+        buildhistory1 = buildhistory.add_mutually_exclusive_group()
+
+        buildhistory1.add_argument('--disable-buildhistory', dest='buildhistory', action='store_false', default=True,
+                                  help='disable buildhistory functionality (default: False)')
+
+        buildhistory1.add_argument('--enable-buildhistory', dest='buildhistory', action='store_true', default=True,
+                                  help='enable buildhistory functionality (default: True)')
+
+        buildhistory.add_argument('--enable-buildhistoryauthor', dest='buildhistoryauthor', default='', help='specify name and email used in buildhistory git commits (default: none, will use author from git global config)')
+
+        parser.add_argument('MACHINE', nargs='+')
+
+    return parser.parse_args(arglist)
+
+WEBOSLAYERS = []
+LAYERSPRIORITY = {}
+SUBMISSIONS = {}
+LOCATIONS = {}
+URLS = {}
+PRIORITYORDER = []
+COLLECTION_NAME = {}
+COLLECTION_PATH = {}
+DIRNAME = {}
+SUMMARYINFO = {}
+BRANCHINFONEW = {}
+BRANCHINFOCURRENT = {}
+COMMITIDSNEW = {}
+COMMITIDSCURRENT = {}
+TAGSINFONEW = {}
+REPOPATCHDIR = {}
+
+def location_to_dirname(layer, location):
+    str1 = location.split('/')
+    DIRNAME[layer] = os.path.splitext(str1[len(str1)-1])[0]
+
+def readlayers(path):
+    sys.path.insert(0,path)
+    if not os.path.isfile(os.path.join(path,'weboslayers.py')):
+        raise Exception("Error:" 'Configuration file {} does not exist!'.format(os.path.join(path,'weboslayers.py')))
+
+    from weboslayers import webos_layers
+
+    for p in webos_layers:
+        WEBOSLAYERS.append(p[0])
+        PRIORITYORDER.append(p[1])
+        LAYERSPRIORITY[p[0]] = p[1]
+        URLS[p[0]] = p[2]
+        SUBMISSIONS[p[0]] = p[3]
+        parsesubmissions(p[0])
+        LOCATIONS[p[0]] = p[4]
+        if URLS[p[0]]:
+            location_to_dirname(p[0], URLS[p[0]])
+        if LOCATIONS[p[0]]:
+            location_to_dirname(p[0], LOCATIONS[p[0]])
+
+    PRIORITYORDER.sort()
+    PRIORITYORDER.reverse()
+
+def parsesubmissions(layer):
+    BRANCH = ''
+    COMMIT = ''
+    TAG = ''
+    for vgit in SUBMISSIONS[layer].split(','):
+        if not vgit:
+            continue
+        str1, str2 = vgit.split('=')
+        if str1.lower() == 'commit':
+            if not COMMIT:
+                COMMIT = str2
+        elif str1.lower() == 'branch':
+            BRANCH = str2
+        elif str1.lower() == 'tag':
+            if not TAG:
+                TAG = str2
+
+    if not BRANCH:
+        BRANCH = 'master'
+
+    BRANCHINFONEW[layer] = BRANCH
+    COMMITIDSNEW[layer] = COMMIT
+    TAGSINFONEW[layer] = TAG
+
+def readdistro(path):
+    sys.path.insert(0,path)
+    if not os.path.isfile(os.path.join(path,'weboslayers.py')):
+        raise Exception("Error:" 'Configuration file {} does not exist!'.format(os.path.join(path,'weboslayers.py')))
+
+    from weboslayers import Distribution
+    return Distribution
+
+def downloadprojects(srcdir,verbosity):
+    for layer in WEBOSLAYERS:
+        if os.path.exists(os.path.abspath( DIRNAME[layer] ) ):
+            print("Note:", 'Git repo {} exists! Skipping download.'.format(layer))
+            continue
+        if URLS[layer] and LOCATIONS[layer]:
+            raise Exception("Error:", 'Both url and location are defined for {} layer!'.format(layer))
+        if not URLS[layer]:
+            if not LOCATIONS[layer]:
+                raise Exception("Error:", 'Must define {} git repo or location!'.format(layer))
+            continue
+
+        downloadrepo(layer)
+
+def downloadrepo(layer,update=False):
+    if not update:
+        cmd = 'git clone {}'.format(URLS[layer])
+        if echo_check_call(cmd,True):
+            raise Exception('Error: running {}'.format(cmd))
+
+        olddir = os.getcwd()
+        os.chdir(DIRNAME[layer])
+        newbranch = BRANCHINFONEW[layer]
+
+        if newbranch:
+            refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch"))), encoding='utf-8', errors='strict')
+            refbranch = refbranchlist.splitlines()
+            foundbranch = False
+            for ibranch in refbranch:
+                if newbranch in ibranch:
+                    foundbranch = True
+            if not foundbranch:
+                refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch -r"))), encoding='utf-8', errors='strict')
+                refbranch = refbranchlist.splitlines()
+                for ibranch in refbranch:
+                    if ibranch[len(ibranch)-len(newbranch):len(ibranch)] == newbranch:
+                        if 'HEAD' in ibranch:
+                            continue
+                        else:
+                            foundbranch = True
+                            print( " found %s " % ibranch )
+                            cmd ='git checkout -B {0} {1}'.format(newbranch,ibranch)
+                            if subprocess.call(shlex.split(echo_cmd(cmd))):
+                                raise Exception('Can not checkout out [{}] branch'.format(newbranch))
+                            break
+
+        currentbranch = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD"))), encoding='utf-8', errors='strict').rstrip()
+        newcommitid = COMMITIDSNEW[layer]
+        if newcommitid:
+            if newcommitid.startswith('refs/changes/'):
+                if newbranch and newbranch != currentbranch:
+                    # older git doesn't allow to update reference on currently checked out branch
+                    cmd ='git fetch origin {0} && git checkout -B {1} FETCH_HEAD'.format(newcommitid,newbranch)
+                elif newbranch:
+                    # we're already on requested branch
+                    cmd ='git fetch origin {0} && git reset --hard FETCH_HEAD'.format(newcommitid)
+                else:
+                    # we don't have any branch preference use detached
+                    cmd ='git fetch origin {0} && git checkout FETCH_HEAD'.format(newcommitid)
+                if subprocess.call(echo_cmd(cmd), shell=True):
+                    raise Exception('Can not checkout reference [{}]'.format(newcommitid))
+            else:
+                if newbranch and newbranch != currentbranch:
+                    # older git doesn't allow to update reference on currently checked out branch
+                    cmd ='git checkout -B {0} {1}'.format(newbranch,newcommitid)
+                elif newbranch:
+                    # we're already on requested branch
+                    cmd ='git reset --hard {0}'.format(newcommitid)
+                else:
+                    # we don't have any branch preference use detached
+                    cmd ='git checkout {0}'.format(newcommitid)
+                if subprocess.call(shlex.split(echo_cmd(cmd))):
+                    raise Exception('Can not checkout commit id [{}]'.format(newcommitid))
+
+        newtag = TAGSINFONEW[layer]
+        if newtag:
+            if newbranch and newbranch != currentbranch:
+                # older git doesn't allow to update reference on currently checked out branch
+                cmd ='git checkout -B {0} {1}'.format(newbranch,newtag)
+            elif newbranch:
+                # we're already on requested branch
+                cmd ='git reset --hard {}'.format(newtag)
+            else:
+                cmd ='git checkout {}'.format(newtag)
+            if subprocess.call(shlex.split(echo_cmd(cmd))):
+                raise Exception('Error: can not checkout tag [{}]'.format(newtag))
+
+        os.chdir(olddir)
+    else:
+        updaterepo(layer)
+
+def parselayerconffiles (layername, root):
+    f = open(os.path.join(os.path.abspath(root), "conf", "layer.conf"), 'r')
+    lines = f.readlines()
+    f.close
+    for line in lines:
+        if re.search( 'BBFILE_COLLECTIONS.*=' , line):
+            (dummy, collectionname) = line.rsplit('=')
+            collectionname = collectionname.strip()
+            collectionname = collectionname.strip("\"")
+            COLLECTION_NAME[layername] = collectionname
+
+def traversedir (root):
+    for path, dirs, files in os.walk(root):
+        for filename in files:
+            if filename == 'layer.conf':
+                ( collectionpath, dummy) = os.path.split(path)
+                ( dymmy, layername) = os.path.split(collectionpath)
+                parselayerconffiles(layername, collectionpath)
+                COLLECTION_PATH[layername] = collectionpath
+                break
+
+def parseCollections (srcdir):
+    for layer in WEBOSLAYERS:
+        if ( URLS[layer] ):
+            pathstr = DIRNAME[layer]
+        if ( LOCATIONS[layer] ):
+            pathstr = os.path.abspath( LOCATIONS[layer] )
+
+        if ( os.path.exists( '{}'.format(pathstr)) ):
+            traversedir(pathstr)
+        else:
+            raise Exception("Error:", 'directory does not exist {} !'.format(pathstr))
+
+def writebblayersconf(sourcedir, machine):
+    f = open(os.path.join(sourcedir, "BUILD-{0}".format(machine), "conf", "bblayers.conf"), 'a')
+    f.write('\n')
+    processed_layers = list()
+    for p in PRIORITYORDER:
+        for layer in LAYERSPRIORITY:
+            if LAYERSPRIORITY[layer] == -1:
+                continue
+            if layer not in processed_layers:
+                if LAYERSPRIORITY[layer] == p:
+                    processed_layers.append(layer)
+                    leftside = layer
+                    leftside = leftside.replace('-','_')
+                    leftside = leftside.upper()
+                    if not URLS[layer]:
+                        str = "{0}_LAYER ?= \"{1}\" ".format(leftside, LOCATIONS[layer])
+                    else:
+                        str = "{0}_LAYER ?= \"${{PALMDIR}}/{1}\"".format(leftside, COLLECTION_PATH[layer])
+
+                    f.write(str)
+                    f.write('\n')
+                    break
+    f.write('\n')
+    f.write('BBFILES ?= ""\n')
+    f.write('BBLAYERS ?= " \\')
+    f.write('\n')
+    processed_layers = list()
+    for p in PRIORITYORDER:
+        for layer in LAYERSPRIORITY:
+            if LAYERSPRIORITY[layer] == -1:
+                continue
+            if layer not in processed_layers:
+                if LAYERSPRIORITY[layer] == p:
+                    processed_layers.append(layer)
+                    leftside = layer
+                    leftside = "{}".format(layer)
+                    leftside = leftside.replace('-','_')
+                    leftside = leftside.upper()
+                    f.write("   ${{{0}_LAYER}} \\".format(leftside))
+                    f.write('\n')
+                    break
+    f.write('  "')
+    f.write('\n')
+    for layer in LAYERSPRIORITY:
+        if LAYERSPRIORITY[layer] <= 0 :
+            continue
+        f.write("BBFILE_PRIORITY_{0} = \"{1}\"".format(COLLECTION_NAME[layer], LAYERSPRIORITY[layer]))
+        f.write('\n')
+    f.close
+
+def updatelayers (sourcedir):
+    # all layers must exists before update
+    for layer in WEBOSLAYERS:
+        if not os.path.exists(os.path.abspath( DIRNAME[layer] ) ):
+            downloadrepo(layer)
+
+    # run sanity check on repo
+    layers_sanity = list()
+    update_location = list()
+    updated_layers = list()
+    for layer in WEBOSLAYERS:
+        if DIRNAME[layer] not in update_location:
+            update_location.append(DIRNAME[layer])
+            updated_layers.append(layer)
+            if reposanitycheck(layer) != 0:
+                layers_sanity.append(layer)
+
+    if layers_sanity:
+        print('NOTE: Found local changes for repos(s) {0}\n'.format(layers_sanity))
+
+    # update layers
+    for layer in WEBOSLAYERS:
+        if layer in updated_layers:
+            downloadrepo(layer,True)
+
+def printupdatesummary ():
+    print ('\nRepo Update Summary')
+    print ('===================')
+    if not len(SUMMARYINFO):
+         print ('No local changes found')
+    for layer in SUMMARYINFO:
+        mstatus = SUMMARYINFO[layer]
+        print ('[{}] has the following changes:'.format(layer))
+        if int(mstatus) & 1:
+            print ('    *) local uncommitted changes, use \'git stash pop\' to retrieve')
+        if int(mstatus) & 2:
+            print ('    *) local committed changes, patches are backed up in {}/'.format(REPOPATCHDIR[layer]))
+        if int(mstatus) & 4:
+            print ('    *) local untracked changes')
+        if BRANCHINFONEW[layer] != BRANCHINFOCURRENT[layer]:
+            print ('    *) switched branches from {0} to {1}'.format(BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer]))
+    print ('\n')
+
+def reposanitycheck(layer):
+    olddir = os.getcwd()
+    os.chdir(DIRNAME[layer])
+
+    BRANCHINFOCURRENT[layer] = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD"))), encoding='utf-8', errors='strict').rstrip()
+
+    res = False
+    msgs = 0
+
+    print('Checking for local changes in [{0}]'.format(layer))
+    if subprocess.check_output(shlex.split(echo_cmd("git status --porcelain --u=no -s"))):
+        print('Warning: found local uncommited changes in [{0}]'.format(layer))
+        msgs += 1
+        subprocess.check_output(shlex.split(echo_cmd("git stash")))
+        res = True
+
+    if subprocess.check_output(echo_cmd("git status --porcelain -s | grep -v '^?? MCF-PATCHES_' || true"), shell=True):
+        print('Warning: found local untracked changes in [{0}]'.format(layer))
+        msgs += 4
+        res = True
+
+    logger.debug("reposanitycheck({0}) dir {1}, branchinfo {2}, branchinfonew {3}".format(layer, DIRNAME[layer], BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer]))
+    newbranch = BRANCHINFONEW[layer]
+    if newbranch:
+        refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch"))), encoding='utf-8', errors='strict')
+        refbranch = refbranchlist.splitlines()
+        foundlocalbranch = False
+        needcheckout = True
+        for ibranch in refbranch:
+            if ibranch[len(ibranch)-len(newbranch):len(ibranch)] == newbranch:
+                if ibranch.startswith('* '):
+                    needcheckout = False
+                foundlocalbranch = True
+                break
+
+        refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch -r"))), encoding='utf-8', errors='strict')
+        refbranch = refbranchlist.splitlines()
+        foundremotebranch = False
+        for ibranch in refbranch:
+            if ibranch[len(ibranch)-len(newbranch):len(ibranch)] == newbranch:
+                if 'HEAD' in ibranch:
+                    continue
+                else:
+                    foundremotebranch = True
+                    remotebranch = ibranch.strip()
+                    break
+
+        if foundlocalbranch and foundremotebranch:
+            if needcheckout and subprocess.call(shlex.split(echo_cmd('git checkout {}'.format(newbranch)))):
+                raise Exception('Failed git checkout {}'.format(newbranch))
+
+            head = subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD")))
+            head = str(head, encoding='utf-8', errors='strict').rstrip()
+            patchdir = './MCF-PATCHES_{0}-{1}'.format(head, timestamp)
+            REPOPATCHDIR[layer] = "{0}/{1}".format(DIRNAME[layer], patchdir)
+            cmd ='git format-patch {0}..{1} -o {2}'.format(remotebranch,newbranch,patchdir)
+            rawpatches = str(subprocess.check_output(shlex.split(echo_cmd(cmd))), encoding='utf-8', errors='strict')
+            patches = rawpatches.splitlines()
+            num = len(patches)
+            # print( ' info: number of patches: {0} '.format(num))
+            if num > 0:
+                msgs += 2
+                res = True
+            else:
+                # remove empty dir if there weren't any patches created by format-patch
+                cmd ='rmdir --ignore-fail-on-non-empty {0}'.format(patchdir)
+                subprocess.check_output(shlex.split(echo_cmd(cmd)))
+
+            trackingbranch = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref %s@{upstream}" % newbranch))), encoding='utf-8', errors='strict')
+            trackingbranch = trackingbranch.split()[0]
+            if trackingbranch != remotebranch:
+                # to ensure we are tracking remote
+                if subprocess.call(shlex.split(echo_cmd('git branch --set-upstream {0} {1}'.format(newbranch, remotebranch)))):
+                    raise Exception('Failed to set remote tracking on branch {}'.format(newbranch))
+
+        elif not foundlocalbranch and foundremotebranch:
+            if subprocess.call(shlex.split(echo_cmd('git checkout -b {0} {1}'.format(newbranch, remotebranch)))):
+                raise Exception('Failed to checkout branch {}'.format(newbranch))
+        else:
+            # anything else is failure
+            raise Exception('Could not find local and remote branches for {}'.format(newbranch))
+    else:
+            raise Exception('Undefined branch name')
+
+    if res:
+        SUMMARYINFO[layer] = msgs
+
+    print('Done.\n')
+
+    newdir = os.chdir(olddir)
+    return res
+
+# Taken from bitbake/lib/bb/fetch2/git.py with modifications for mcf usage
+def contains_ref(tag):
+    cmd = "git log --pretty=oneline -n 1 %s -- 2>/dev/null | wc -l" % (tag)
+    output = str(subprocess.check_output(cmd, shell=True), encoding='utf-8', errors='strict')
+    if len(output.split()) > 1:
+        raise Exception("Error: '%s' gave output with more then 1 line unexpectedly, output: '%s'" % (cmd, output))
+    return output.split()[0] != "0"
+
+def updaterepo(layer):
+    olddir = os.getcwd()
+    os.chdir(DIRNAME[layer])
+
+    COMMITIDSCURRENT[layer] = str(subprocess.check_output(shlex.split(echo_cmd("git  log --pretty=format:%h -1"))), encoding='utf-8', errors='strict')
+
+    newcommitid = COMMITIDSNEW[layer]
+    currentcommitid = COMMITIDSCURRENT[layer]
+    newbranch = BRANCHINFONEW[layer]
+    currentbranch = BRANCHINFOCURRENT[layer]
+
+    logger.debug("updaterepo({0}) dir {1}, id {2}, newid {3}, branch {4}, newbranch {5}".format(layer, DIRNAME[layer], currentcommitid, newcommitid, currentbranch, newbranch))
+
+    if newcommitid != currentcommitid:
+        print('Updating [{0}]'.format(layer))
+        if newcommitid:
+            if newcommitid.startswith('refs/changes/'):
+                if newbranch and newbranch != currentbranch:
+                    # older git doesn't allow to update reference on currently checked out branch
+                    cmd ='git fetch origin {0} && git checkout -B {1} FETCH_HEAD'.format(newcommitid,newbranch)
+                elif newbranch:
+                    # we're already on requested branch
+                    cmd ='git fetch origin {0} && git reset --hard FETCH_HEAD'.format(newcommitid)
+                else:
+                    # we don't have any branch preference use detached
+                    cmd ='git fetch origin {0} && git checkout FETCH_HEAD'.format(newcommitid)
+                if subprocess.call(echo_cmd(cmd), shell=True):
+                    raise Exception('Can not update to reference [{}]'.format(newcommitid))
+            else:
+                if not contains_ref(newcommitid):
+                    if subprocess.call(shlex.split(echo_cmd('git fetch'))):
+                        raise Exception('Error: git fetch failed for {}'.format(layer))
+                if newbranch and newbranch != currentbranch:
+                    # older git doesn't allow to update reference on currently checked out branch
+                    cmd ='git checkout -B {0} {1}'.format(newbranch,newcommitid)
+                elif newbranch:
+                    # we're already on requested branch
+                    cmd ='git reset --hard {0}'.format(newcommitid)
+                else:
+                    # we don't have any branch preference use detached
+                    cmd ='git checkout {0}'.format(newcommitid)
+                if subprocess.call(shlex.split(echo_cmd(cmd))):
+                    raise Exception('Can not update to commit id [{}]'.format(newcommitid))
+        else:
+            # current branch always tracks a remote one
+            if subprocess.call(shlex.split(echo_cmd('git pull origin'))):
+                raise Exception('Error: git pull origin')
+        print('Done.\n')
+    else:
+        print(('[{}] is up-to-date.'.format(layer)))
+
+    newdir = os.chdir(olddir)
+    os.getcwd()
+
+def recover_current_mcf_state(srcdir, configure):
+    mcfstatusfile = os.path.join(srcdir, "mcf.status")
+    if not os.path.exists(mcfstatusfile):
+        raise Exception("mcf.status does not exist.")
+
+    commandlinereconstructed = list()
+    commandlinereconstructed.append(configure)
+    start = False
+    for line in open(mcfstatusfile,'r'):
+        line = line.strip()
+        if not start:
+            start = line.startswith("exec")
+            continue
+
+        if start:
+            if line.startswith('--'):
+                line = line.rstrip('\\')
+                line = line.strip(' ')
+                line = line.replace('\"','')
+                line = line.replace('\'','')
+                commandlinereconstructed.append(line)
+            else:
+                lines = line.rstrip('\\')
+                lines = lines.lstrip()
+                lines = lines.rstrip()
+                lines = lines.split()
+                for lline in lines:
+                    commandlinereconstructed.append(lline)
+
+    sys.argv = commandlinereconstructed
+    return getopts()
+
+
+if __name__ == '__main__':
+    # NB. The exec done by mcf.status causes argv[0] to be an absolute pathname
+    progname = sys.argv[0]
+
+    # Use the same timestamp for everything created by this invocation of mcf
+    timestamp = strftime("%Y%m%d%H%M%S", gmtime())
+
+    updatestate = False
+    options = getopts()
+
+    # Allow ../mcf to work.
+    srcdir = os.path.dirname(progname)
+    if not os.path.isabs(srcdir):
+        lower_dirname = os.path.join('..', srcdir)
+    else:
+        lower_dirname = srcdir
+
+    configure = os.path.join(lower_dirname, 'configure')
+
+    if options.mcfcommand == 'update':
+         # recover current mcf state
+        updatestate = True
+        options = recover_current_mcf_state(srcdir, configure)
+
+    # read status template, process, write
+    if options.trace:
+        enable_debug()
+
+    files = [[os.path.join(srcdir, 'build-templates', 'mcf-status.in'), 'mcf.status'],
+             [os.path.join(srcdir, 'Makefile.in'), 'Makefile']]
+
+    cpu_count = 0
+    if options.bb_number_threads == 0 or options.parallel_make == 0:
+        with open('/proc/cpuinfo', 'r') as f:
+            for line in f:
+                if line.find('processor') != -1:
+                    cpu_count += 1
+
+    if options.bb_number_threads == 0:
+        options.bb_number_threads = cpu_count
+
+    if options.parallel_make == 0:
+        options.parallel_make = cpu_count
+
+    replacements = [
+        ['@bb_number_threads@', '{}'.format(options.bb_number_threads)],
+        ['@configure@', configure],
+        ['@machines@', ' '.join(options.MACHINE)],
+        ['@machines_only@', ' '.join([i.split(':')[0] for i in options.MACHINE])],
+        ['@parallel_make@', '{}'.format(options.parallel_make)],
+        ['@premirror@', options.premirror],
+        ['@sstatemirror@', '"{}"'.format(' '.join(options.sstatemirror) if options.sstatemirror else '')],
+        ['@distro@', '{}'.format(readdistro(srcdir))],
+        ['@buildhistory@', '--{}-buildhistory'.format('enable' if options.buildhistory else 'disable')],
+        ['@buildhistoryauthor@', options.buildhistoryauthor],
+        ['@network@', '--{}-network'.format('enable' if options.network else 'disable')],
+        ['@fetchpremirroronly@', '--{}-fetch-premirror-only'.format('enable' if options.fetchpremirroronly else 'disable')],
+        ['@generatemirrortarballs@', '--{}-generate-mirror-tarballs'.format('enable'
+                                                                            if options.generatemirrortarballs else 'disable')],
+        ['@privateinternalcomponentmirror@', '--{}-private-internal-component-mirror'.format('enable'
+                                                                            if options.privateinternalcomponentmirror else 'disable')],
+        ['@prog@', progname],
+        ['@srcdir@', srcdir],
+        ]
+
+    for i, j in files:
+        process_file(i, j, replacements)
+
+    echo_check_call('/bin/chmod a+x mcf.status', options.verbose)
+
+    readlayers(srcdir)
+    if updatestate:
+        updatelayers(srcdir)
+        printupdatesummary()
+    else:
+        downloadprojects(srcdir,True)
+    parseCollections(srcdir)
+
+    for machine in options.MACHINE:
+        logger.info('Configuring in BUILD-{}'.format(machine))
+        logger.info('configure is {}'.format(configure))
+
+        cmd = '([ -d BUILD-{} ] || mkdir BUILD-{})'.format(machine, machine)
+        cmd += ' && (cd BUILD-{} && PWD= @configure@ \
+            --enable-bb-number-threads=@bb_number_threads@ \
+            --enable-parallel-make=@parallel_make@ \
+            --enable-premirror=@premirror@ \
+            --enable-sstatemirror=@sstatemirror@ \
+            --enable-distro=@distro@ \
+            @buildhistory@ \
+            --enable-buildhistoryauthor="@buildhistoryauthor@" \
+            @network@ \
+            @fetchpremirroronly@ \
+            @privateinternalcomponentmirror@ \
+            @generatemirrortarballs@ \
+            --build=ubuntu \
+            --host={})'.format(machine, machine)
+
+        for i, j in replacements:
+            cmd = cmd.replace(i, j)
+
+        echo_check_call(cmd, options.verbose)
+
+        writebblayersconf(srcdir, machine)
+
+        logger.info('Done.\n')
