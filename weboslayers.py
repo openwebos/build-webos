@@ -57,7 +57,7 @@ webos_layers = [
 ('bitbake',               -1, 'git://github.com/openembedded/bitbake.git',              'commit=53e6b63', ''),
 ('meta',                   5, 'git://github.com/openembedded/oe-core.git',              'commit=1b40dac', ''),
 
-('meta-oe',                6, 'git://github.com/openwebos/meta-oe.git',                 'commit=c90d194', ''),
+('meta-oe',                6, 'git://github.com/openwebos/meta-oe.git',                 'commit=c68caf3', ''),
 
-('meta-webos',            10, 'git://github.com/openwebos/meta-webos.git',              'commit=d9065f4', ''),
+('meta-webos',            10, 'git://github.com/openwebos/meta-webos.git',              'commit=0b29adc', ''),
 ]
