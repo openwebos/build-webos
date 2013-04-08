@@ -25,7 +25,7 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.15"
+__version__ = "5.1.0"
 
 logger = logging.getLogger(__name__)
 
@@ -84,20 +84,14 @@ def set_log_level(level):
 
 # Essentially, mcf parses options, creates mcf.status, and runs mcf.status.
 
-def process_file(f, replacements, machine):
-    (ifile, ofile, builddir_specific) = f
+def process_file(f, replacements):
+    (ifile, ofile) = f
     with open(ifile, 'r') as f:
         status = f.read()
 
     for i, j in replacements:
         status = status.replace(i, j)
-        if i == '@abs_srcdir@':
-            # these are the only 2 machine specific options, define them here instead of replacements
-            status = status.replace('@abs_builddir@', os.path.join(j, "BUILD-%s" % machine))
-            status = status.replace('@machine@', machine)
 
-    if builddir_specific:
-        ofile = os.path.join("BUILD-%s" % machine, ofile)
     odir = os.path.dirname(ofile)
     if odir and not os.path.isdir(odir):
         os.mkdir(odir)
@@ -427,8 +421,8 @@ def parse_collections(srcdir):
         else:
             raise Exception("Error:", "directory '%s' does not exist, you probably need to call update" % LOCATIONS[layer])
 
-def write_bblayers_conf(sourcedir, machine):
-    f = open(os.path.join(sourcedir, "BUILD-{0}".format(machine), "conf", "bblayers.conf"), 'a')
+def write_bblayers_conf(sourcedir):
+    f = open(os.path.join(sourcedir, "conf", "bblayers.conf"), 'a')
     f.write('\n')
     processed_layers = list()
     for p in PRIORITYORDER:
@@ -444,7 +438,7 @@ def write_bblayers_conf(sourcedir, machine):
                     if os.path.isabs(LOCATIONS[layer]):
                         str = "%s_LAYER ?= \"%s/%s\"" % (leftside, LOCATIONS[layer], COLLECTION_PATH[layer])
                     else:
-                        str = "%s_LAYER ?= \"${PALMDIR}/%s\"" % (leftside, COLLECTION_PATH[layer])
+                        str = "%s_LAYER ?= \"${TOPDIR}/%s\"" % (leftside, COLLECTION_PATH[layer])
                     f.write(str)
                     f.write('\n')
                     break
@@ -807,12 +801,11 @@ def sanitycheck(options):
 
 def configure_build(srcdir, options):
     files = [
-        [os.path.join(srcdir, 'Makefile.in'),                             'Makefile',           False],
-        [os.path.join(srcdir, 'build-templates', 'mcf-status.in'),        'mcf.status',         False],
-        [os.path.join(srcdir, 'build-templates', 'bitbake-rc.in'),        'bitbake.rc',         True],
-        [os.path.join(srcdir, 'build-templates', 'Makefile.in'),          'Makefile',           True],
-        [os.path.join(srcdir, 'build-templates', 'bblayers-conf.in'),     'conf/bblayers.conf', True],
-        [os.path.join(srcdir, 'build-templates', 'local-conf.in'),        'conf/local.conf',    True],
+        [os.path.join(srcdir, 'build-templates', 'mcf-status.in'),        'mcf.status'        ],
+        [os.path.join(srcdir, 'build-templates', 'oe-init-build-env.in'), 'oe-init-build-env' ],
+        [os.path.join(srcdir, 'build-templates', 'Makefile.in'),          'Makefile'          ],
+        [os.path.join(srcdir, 'build-templates', 'bblayers-conf.in'),     'conf/bblayers.conf'],
+        [os.path.join(srcdir, 'build-templates', 'local-conf.in'),        'conf/local.conf'   ],
     ]
 
     replacements = [
@@ -834,8 +827,8 @@ def configure_build(srcdir, options):
         ['@network@',                              '--%s-network'                           % ('enable' if options.network                        else 'disable')],
         ['@fetchpremirroronlyoption@',             '--%s-fetch-premirror-only'              % ('enable' if options.fetchpremirroronly             else 'disable')],
         ['@generatemirrortarballsoption@',         '--%s-generate-mirror-tarballs'          % ('enable' if options.generatemirrortarballs         else 'disable')],
+        ['@machine@', options.MACHINE[0]],
         ['@machines@', ' '.join(options.MACHINE)],
-        ['@machines_only@', ' '.join([i.split(':')[0] for i in options.MACHINE])],
         ['@distro@', DISTRO],
         ['@prog@', progname],
         ['@srcdir@', srcdir],
@@ -863,13 +856,12 @@ def configure_build(srcdir, options):
 
     replacements =  replacements + icecc_replacements
 
+    logger.info('MCF-%s: Configuring build directory BUILD' % __version__)
+    for f in files:
+        process_file(f, replacements)
     parse_collections(srcdir)
-    for machine in options.MACHINE:
-        logger.info('MCF-%s: Configuring build directory BUILD-%s' % (__version__, machine))
-        for f in files:
-            process_file(f, replacements, machine)
-        write_bblayers_conf(srcdir, machine)
-        logger.info('MCF-%s: Done configuring build directory BUILD-%s' % (__version__, machine))
+    write_bblayers_conf(srcdir)
+    logger.info('MCF-%s: Done configuring build directory BUILD' % __version__)
 
     echo_check_call('/bin/chmod a+x mcf.status', options.verbose)
 

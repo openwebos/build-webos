@@ -78,14 +78,7 @@ ICECC_PARALLEL_MAKE ?= "-j ${@ @icecc_parallel_make@ if @icecc_parallel_make@ !=
 # You need to select a specific machine to target the build with. There are a selection
 # of emulated machines available which can boot and run in the QEMU emulator:
 #
-
-MACHINE = "@machine@"
-
-#MACHINE ?= "qemuarm"
-#MACHINE ?= "qemumips"
-#MACHINE ?= "qemuppc"
-#MACHINE ?= "qemux86"
-#MACHINE ?= "qemux86-64"
+# export MACHINE variable in your shell environment
 #
 # This sets the default machine to be qemux86 if no other machine is selected:
 MACHINE ??= "qemux86"
@@ -101,7 +94,6 @@ MACHINE ??= "qemux86"
 #
 # The default is a downloads directory under TOPDIR which is the build directory.
 #
-TOPDIR := "@abs_srcdir@"
 DL_DIR ?= "${TOPDIR}/downloads"
 
 #
@@ -130,7 +122,7 @@ SSTATE_DIR ?= "${TOPDIR}/sstate-cache"
 #
 # The default is a tmp directory under TOPDIR.
 #
-TMPDIR = "@abs_builddir@"
+TMPDIR = "${TOPDIR}/BUILD"
 
 
 #

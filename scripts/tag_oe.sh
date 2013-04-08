@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (c) 2008-2013 LG Electronics, Inc.
+# Copyright (c) 2008-2014 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 set -x
 
 rm -f TAGS
-find BUILD-*/conf oe-core meta-oe meta-webos \
+find conf oe-core meta-oe meta-webos \
     \( -name \*.bb -o -name \*.conf -o -name \*.inc -o -name \*.bbclass \) \
     -print \
     | xargs etags -a

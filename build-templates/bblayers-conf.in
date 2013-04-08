@@ -17,9 +17,8 @@
 # changes incompatibly
 LCONF_VERSION = "5"
 
-PALMDIR ?= "@abs_srcdir@"
-TMPDIR := "@abs_builddir@"
-BBPATH = "${PALMDIR}:${TMPDIR}"
+TMPDIR := "@abs_srcdir@"
+BBPATH = "${TOPDIR}:${TMPDIR}"
 
 # Pull in two optional configuration files to allow the user to override
 # component source directories, shared state locations, etc.
@@ -45,5 +44,5 @@ BBPATH = "${PALMDIR}:${TMPDIR}"
 # the meta-webos layer.
 
 include ${HOME}/webos-global.conf
-include ${PALMDIR}/webos-local.conf
+include ${TOPDIR}/webos-local.conf
 

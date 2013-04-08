@@ -19,11 +19,14 @@
 /cache
 
 # Other build products
-BUILD-*/
+/BUILD/
+/BUILD-ARTIFACTS/
 /Makefile
 TAGS
 /bitbake.lock
 /mcf.status
+/oe-init-build-env
+/conf/
 __pycache__/
 tmp/
 patches/
