@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.2.4"
+SCRIPT_VERSION="3.2.5"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -243,8 +243,7 @@ else
        ;;
 
     # Legacy job names
-
-    build-webos-pro|build-webos-nightly|build-webos|build-webos-qemu*)
+    build-webos-nightly|build-webos|build-webos-qemu*)
        job_type="official"
        ;;
 
@@ -502,7 +501,7 @@ if [ -n "${MACHINES}" ]; then
         else
           cp ../buildhistory/images/${M}/eglibc/${I}/build-id ${ARTIFACTS}/${M}/${I}/build-id.txt
         fi
-        if [ -n "$FIRST_IMAGE" ] ; then
+        if [ -z "$FIRST_IMAGE" ] ; then
           # store build-id.txt from first IMAGE and first MACHINE as representant of whole build for InfoBadge
           # instead of requiring jenkins job to hardcode MACHINE/IMAGE name in:
           # manager.addInfoBadge("${manager.build.getWorkspace().child('buildhistory/images/qemux86/eglibc/webos-image/build-id.txt').readToString()}")
@@ -516,6 +515,9 @@ if [ -n "${MACHINES}" ]; then
         cp ../buildhistory/images/${M}/eglibc/${I}/files-in-image.txt ${ARTIFACTS}/${M}/${I}/files-in-image.txt
         cp ../buildhistory/images/${M}/eglibc/${I}/installed-packages.txt ${ARTIFACTS}/${M}/${I}/installed-packages.txt
         cp ../buildhistory/images/${M}/eglibc/${I}/installed-package-sizes.txt ${ARTIFACTS}/${M}/${I}/installed-package-sizes.txt
+        if [ -e ../buildhistory/images/${M}/eglibc/${I}/installed-package-file-sizes.txt ] ; then
+          cp ../buildhistory/images/${M}/eglibc/${I}/installed-package-file-sizes.txt ${ARTIFACTS}/${M}/${I}/installed-package-file-sizes.txt
+        fi
       fi
     done
     cd ..
