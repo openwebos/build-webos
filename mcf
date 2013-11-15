@@ -167,8 +167,10 @@ def getopts():
         private.add_argument('--disable-private-internal-component-mirror', dest='privateinternalcomponentmirror', action='store_false',
                           default=False, help='disable the private internal component mirror (default: disabled)')
 
-        private.add_argument('--enable-private-internal-component-mirror', dest='privateinternalcomponentmirror', action='store_true',
-                          default=False, help='enable the private internal component mirror (default: disabled)')
+        private.add_argument('--enable-private-internal-component-mirror', dest='privateinternalcomponentmirror', action='store_false',
+                          default=False, help='enable the private internal component mirror (default: disabled). '+
+                                              'This option is deprecated and ignored. It is left defined to avoid '+
+                                              'breaking any existing scripts.')
 
         buildhistory = parser.add_argument_group('Buildhistory')
 
