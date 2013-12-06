@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Copyright (c) 2008-2013 LG Electronics, Inc.
+# Copyright (c) 2008-2014 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -534,7 +534,7 @@ def reposanitycheck(layer):
 
             head = subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD")))
             head = str(head, encoding='utf-8', errors='strict').rstrip()
-            patchdir = './MCF-PATCHES_{0}-{1}'.format(head, timestamp)
+            patchdir = './MCF-PATCHES_{0}-{1}'.format(head.replace('/','_'), timestamp)
             REPOPATCHDIR[layer] = "{0}/{1}".format(DIRNAME[layer], patchdir)
             cmd ='git format-patch {0}..{1} -o {2}'.format(remotebranch,newbranch,patchdir)
             rawpatches = str(subprocess.check_output(shlex.split(echo_cmd(cmd))), encoding='utf-8', errors='strict')
