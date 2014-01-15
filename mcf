@@ -485,6 +485,10 @@ def reposanitycheck(layer):
     olddir = os.getcwd()
     os.chdir(DIRNAME[layer])
 
+    # Sync with remote repo
+    if subprocess.call(shlex.split(echo_cmd('git remote update'))):
+        raise Exception('Failed to fetch {} repo'.format(layer))
+
     BRANCHINFOCURRENT[layer] = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD"))), encoding='utf-8', errors='strict').rstrip()
 
     res = False
