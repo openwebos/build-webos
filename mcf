@@ -549,7 +549,9 @@ def reposanitycheck(layer):
                 cmd ='rmdir --ignore-fail-on-non-empty {0}'.format(patchdir)
                 subprocess.check_output(shlex.split(echo_cmd(cmd)))
 
-            trackingbranch = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref %s@{upstream}" % newbranch))), encoding='utf-8', errors='strict')
+            # [GF-58476] As we already switched to newbranch, HEAD will always point to current.
+            # This will allow us to work around the problem of having @ in the branch name
+            trackingbranch = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD@{upstream}"))), encoding='utf-8', errors='strict')
             trackingbranch = trackingbranch.split()[0]
             if trackingbranch != remotebranch:
                 # to ensure we are tracking remote
