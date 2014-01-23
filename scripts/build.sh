@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2013 LG Electronics, Inc.
+# Copyright (c) 2013-2014 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.2.5"
+SCRIPT_VERSION="3.3.6"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -104,9 +104,10 @@ function check_project {
       echo "NOTE: Checking out $layer in $GERRIT_REFSPEC" >&2
       git checkout FETCH_HEAD
     else
-      # for incremental builds we should add "git fetch" here
-      echo "NOTE: Checking out $layer in origin/master" >&2
-      git checkout remotes/origin/master
+      current_branch=`git branch --list|grep ^*\ |awk '{print $2}'`
+      echo "NOTE: Run 'git remote update && git reset --hard origin/$current_branch' in  $layer" >&2
+      echo "NOTE: Current branch - $current_branch"
+      git remote update && git reset --hard origin/$current_branch
     fi
     popd >/dev/null
   fi
@@ -142,6 +143,21 @@ function check_project_vars {
     fi
   fi
   echo "$ldesc"
+}
+
+function generate_bom {
+  MACHINE=$1
+  I=$2
+  BBFLAGS=$3
+  FILENAME=$4
+
+  mkdir -p "${ARTIFACTS}/${MACHINE}/${I}" || true
+  /usr/bin/time -f "$TIME_STR" bitbake ${BBFLAGS} -g ${I}
+  grep '^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$' package-depends.dot |\
+    grep -v '^"\([^"]*\)" \[label="\([^ (]*([^ ]*)\) :\([^\\]*\)\\n\([^"]*\)"\]$' |\
+      sed 's/^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$/\1;\2;\3;\4/g' |\
+        sed "s#${BUILD_TOPDIR}/BUILD/.././##g" |\
+          sort > ${ARTIFACTS}/${MACHINE}/${I}/${FILENAME}
 }
 
 TEMP=`getopt -o p:m:I:T:M:bshVu: --long buildhistory-path:,manifest-path:,images:,targets:,machines:,bom,signatures,help,version,scp-url: \
@@ -222,12 +238,8 @@ else
   # It's not expected that this script would ever be used for Open webOS as is,
   # but the tests for it have been added as a guide for creating that edition.
   case ${JOB_NAME} in
-    build-*-official-*)
+    *-official-*)
        job_type="official"
-       ;;
-
-    build-*-engineering-*)
-       job_type="engr"
        ;;
 
     clean-engineering-*)
@@ -235,11 +247,28 @@ else
        job_type="clean"
        ;;
 
-    # The build-*-integrate-* jobs are the verification builds done right before
+    *-engineering-*)
+       job_type="engr"
+       ;;
+
+    *-verify-*)
+       job_type="verf"
+       ;;
+
+    # The *-integrate-* jobs are like the verification builds done right before
     # the official builds. They have different names so that they can use a
     # separate, special pool of Jenkins slaves.
-    build-*-verify-*|build-*-integrate-*)
-       job_type="verf"
+    *-integrate-*)
+       job_type="integ"
+       ;;
+
+    # The *-multilayer-* builds allow developers to trigger a multi-layer build
+    # from their desktop, without using the Jenkins parameterized build UI.
+    #
+    # The 'mlverf' job type is used so that the build-id makes it obvious that
+    # a multilayer build was performed (useful when evaluating CCC's).
+    *-multilayer-*)
+       job_type="mlverf"
        ;;
 
     # Legacy job names
@@ -260,7 +289,7 @@ else
     *) echo "Unrecognized JOB_NAME: '${JOB_NAME}'"
        job_type="unrecognized!${JOB_NAME}"
        ;;
-    esac
+  esac
 
   # Convert job_types we recognize into abbreviations
   case $job_type in
@@ -281,20 +310,33 @@ else
     # when this assumption is broken.
     BUILDHISTORY_BRANCH="master"
   else
-    # job_type can not contain any hyphens (except the trailing separator)
-    job_type="${job_type//-/}-"
+    # job_type can not contain any hyphens
+    job_type="${job_type//-/}"
   fi
 
-  if [ -n "${site}" ]; then
-    site="${site}:"
+  # Append the separators to site and build-type.
+  #
+  # Use intermediate variables so that the remainder of the script need not concern
+  # itself with the separators, which are purely related to formatting the build id.
+  idsite="$site"
+  idtype="$job_type"
+
+  if [ -n "$idsite" ]; then
+    idsite="${idsite}-"
+  fi
+
+  if [ -n "$idtype" ]; then
+    idtype="${idtype}."
   fi
 
   # BUILD_NUMBER should be set by the Jenkins executor
   if [ -z "${BUILD_NUMBER}" ] ; then
-    echo "JENKINS_URL set but BUILD_NUMBER isn't"
+    echo "JENKINS_URL is set, but BUILD_NUMBER isn't"
     exit 1
   fi
-  export WEBOS_DISTRO_BUILD_ID=${site}${job_type}${BUILD_NUMBER}
+
+  # Format WEBOS_DISTRO_BUILD_ID as <build-type>.<site>-<build number>
+  export WEBOS_DISTRO_BUILD_ID=${idtype}${idsite}${BUILD_NUMBER}
 fi
 
 # Generate BOM files with metadata checked out by mcf (pinned versions)
@@ -305,7 +347,7 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
   TIMESTAMP_OLD=$TIMESTAMP
   printf "TIME: build.sh before first bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
 
-  if [ "$job_type" = "verf-" -o "$job_type" = "engr-" -o "$job_type" = "clean-" ] ; then
+  if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" -o "$job_type" = "clean" ] ; then
     # don't use -before suffix for official builds, because they don't need -after and .diff because
     # there is no logic for using different revisions than weboslayers.py
     BOM_FILE_SUFFIX="-before"
@@ -318,13 +360,7 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
     cd BUILD-${M};
     . bitbake.rc
     for I in ${IMAGES} ${TARGETS}; do
-      mkdir -p "${ARTIFACTS}/${M}/${I}" || true
-      /usr/bin/time -f "$TIME_STR" bitbake ${BBFLAGS} -g ${I}
-      grep '^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$' package-depends.dot |\
-        grep -v '^"\([^"]*\)" \[label="\([^ (]*([^ ]*)\) :\([^\\]*\)\\n\([^"]*\)"\]$' |\
-          sed 's/^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$/\1;\2;\3;\4/g' |\
-            sed "s#$BUILD_TOPDIR/BUILD-$M/.././##g" |\
-              sort > ${ARTIFACTS}/${M}/${I}/bom${BOM_FILE_SUFFIX}.txt
+      generate_bom "${MACHINE}" "${I}" "${BBFLAGS}" "bom${BOM_FILE_SUFFIX}.txt"
     done
     cd ..
   done
@@ -336,8 +372,7 @@ TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
 printf "TIME: build.sh before verf/engr/clean logic: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
 
-# Be aware there is '-' already appended from job_type="${job_type//-/}-" above
-if [ "$job_type" = "verf-" -o "$job_type" = "engr-" ] ; then
+if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" ] ; then
   if [ "$GERRIT_PROJECT" != "${BUILD_REPO}" ] ; then
     set -e # checkout issues are critical for verification and engineering builds
     for project in "${BUILD_LAYERS[@]}" ; do
@@ -349,8 +384,7 @@ if [ "$job_type" = "verf-" -o "$job_type" = "engr-" ] ; then
   BBFLAGS="${BBFLAGS} -k"
 fi
 
-# Be aware there is '-' already appended from job_type="${job_type//-/}-" above
-if [ "$job_type" = "clean-" ] ; then
+if [ "$job_type" = "clean" ] ; then
   set -e # checkout issues are critical for clean build
   desc="[DESC]"
   for project in "${BUILD_LAYERS[@]}" ; do
@@ -363,7 +397,7 @@ fi
 
 # Generate BOM files again, this time with metadata possibly different for engineering and verification builds
 if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
-  if [ "$job_type" = "verf-" -o "$job_type" = "engr-" -o "$job_type" = "clean-" ] ; then
+  if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" -o "$job_type" = "clean" ] ; then
     TIMESTAMP=`date +%s`
     TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
     TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
@@ -378,14 +412,10 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
       cd BUILD-${M};
       . bitbake.rc
       for I in ${IMAGES} ${TARGETS}; do
-        mkdir -p "${ARTIFACTS}/${M}/${I}" || true
-        /usr/bin/time -f "$TIME_STR" bitbake ${BBFLAGS} -g ${I}
-        grep '^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$' package-depends.dot |\
-          grep -v '^"\([^"]*\)" \[label="\([^ (]*([^ ]*)\) :\([^\\]*\)\\n\([^"]*\)"\]$' |\
-            sed 's/^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$/\1;\2;\3;\4/g' |\
-              sed "s#$BUILD_TOPDIR/BUILD-$M/.././##g" |\
-                sort > ${ARTIFACTS}/${M}/${I}/bom-after.txt
-        diff ${ARTIFACTS}/${M}/${I}/bom-before.txt ${ARTIFACTS}/${M}/${I}/bom-after.txt > ${ARTIFACTS}/${M}/${I}/bom-diff.txt
+        generate_bom "${MACHINE}" "${I}" "${BBFLAGS}" "bom-after.txt"
+        diff ${ARTIFACTS}/${MACHINE}/${I}/bom-before.txt \
+             ${ARTIFACTS}/${MACHINE}/${I}/bom-after.txt \
+           > ${ARTIFACTS}/${MACHINE}/${I}/bom-diff.txt
       done
       cd ..
     done
@@ -409,7 +439,7 @@ if [ -n "${SIGNATURES}" -a -n "${MACHINES}" ]; then
     mkdir -p "${ARTIFACTS}/${M}" || true
     # normally this is executed for all MACHINEs togethere, but we're using MACHINE-specific BSP layers
     ../oe-core/scripts/sstate-diff-machines.sh --tmpdir=. --targets="${IMAGES} ${TARGETS}" --machines="${M}"
-    tar cjvf ${ARTIFACTS}/${M}/sstate-diff.tar.bz2 sstate-diff --remove-files
+    tar cjf ${ARTIFACTS}/${M}/sstate-diff.tar.bz2 sstate-diff --remove-files
     cd ..
   done
 fi
@@ -458,8 +488,17 @@ if [ -n "${MACHINES}" ]; then
 
     mkdir -p "${ARTIFACTS}/${M}" || true
     # copy webosvbox if we've built vmdk image
-    cp qa.log ${ARTIFACTS}/${M} || true
+    if [ -e qa.log ]; then
+      cp qa.log ${ARTIFACTS}/${M} || true
+      # show them in console log so they are easier to spot (without downloading qa.log from artifacts
+      echo "WARN: Following QA issues were found:"
+      cat qa.log
+    else
+      echo "NOTE: No QA issues were found."
+    fi
     cp WEBOS_BOM_data.pkl ${ARTIFACTS}/${M} || true
+    grep "Elapsed time" buildstats/*/*/*/* | sed 's/^.*\/\(.*\): Elapsed time: \(.*\)$/\2 \1/g' | sort -n | tail -n 20 | tee -a ${ARTIFACTS}/${M}/top20buildstats.txt
+    tar cjf ${ARTIFACTS}/${M}/buildstats.tar.bz2 buildstats
     for I in ${IMAGES}; do
       mkdir -p "${ARTIFACTS}/${M}/${I}" || true
       # we store only tar.gz, vmdk.zip and .epk images
@@ -520,6 +559,11 @@ if [ -n "${MACHINES}" ]; then
         fi
       fi
     done
+    if [ -d deploy/sources ] ; then
+      # exclude diff.gz files, because with old archiver they contain whole source (nothing creates .orig directory)
+      # see http://lists.openembedded.org/pipermail/openembedded-core/2013-December/087729.html
+      tar czf ${ARTIFACTS}/${M}/sources.tar.gz deploy/sources --exclude \*.diff.gz
+    fi
     cd ..
   done
 else
