@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.18"
+SCRIPT_VERSION="3.3.19"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -65,7 +65,7 @@ ARTIFACTS="${BUILD_TOPDIR}/BUILD-ARTIFACTS"
 mkdir -p "${ARTIFACTS}"
 BUILD_TIME_LOG=${BUILD_TOPDIR}/time.txt
 
-printf "TIME: build.sh start: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
+printf "TIME: build.sh-${SCRIPT_VERSION} start: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 declare -i RESULT=0
 
