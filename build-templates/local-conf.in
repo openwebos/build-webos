@@ -79,7 +79,7 @@ ICECC_PARALLEL_MAKE ?= "-j ${@ @icecc_parallel_make@ if @icecc_parallel_make@ !=
 # of emulated machines available which can boot and run in the QEMU emulator:
 #
 
-MACHINE = "@host_alias@"
+MACHINE = "@machine@"
 
 #MACHINE ?= "qemuarm"
 #MACHINE ?= "qemumips"
@@ -101,7 +101,7 @@ MACHINE ??= "qemux86"
 #
 # The default is a downloads directory under TOPDIR which is the build directory.
 #
-TOPDIR := "@abs_top_srcdir@"
+TOPDIR := "@abs_srcdir@"
 DL_DIR ?= "${TOPDIR}/downloads"
 
 #
@@ -130,7 +130,7 @@ SSTATE_DIR ?= "${TOPDIR}/sstate-cache"
 #
 # The default is a tmp directory under TOPDIR.
 #
-TMPDIR = "@abs_top_builddir@"
+TMPDIR = "@abs_builddir@"
 
 
 #

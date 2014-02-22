@@ -27,19 +27,19 @@ set -e
 exec @prog@ -v \
     --enable-bb-number-threads=@bb_number_threads@ \
     --enable-parallel-make=@parallel_make@ \
-    @icecc_disable_enable@ \
+    @icecc_disable_enable_mcf@ \
     --enable-icecc-parallel-make=@icecc_parallel_make@ \
-    --enable-icecc-location=@alternative_icecc_installation@ \
-    --enable-icecc-user-package-blacklist=@icecc_user_package_blacklist@ \
-    --enable-icecc-user-class-blacklist=@icecc_user_class_blacklist@ \
-    --enable-icecc-user-package-whitelist=@icecc_user_package_whitelist@ \
-    --enable-icecc-env-exec=@icecc_environment_script@ \
+    --enable-icecc-location=@alternative_icecc_installation_mcf@ \
+    --enable-icecc-user-package-blacklist=@icecc_user_package_blacklist_mcf@ \
+    --enable-icecc-user-class-blacklist=@icecc_user_class_blacklist_mcf@ \
+    --enable-icecc-user-package-whitelist=@icecc_user_package_whitelist_mcf@ \
+    --enable-icecc-env-exec=@icecc_environment_script_mcf@ \
     --premirror=@premirror@ \
-    --sstatemirror=@sstatemirror@ \
+    --sstatemirror='@sstatemirror@' \
     @buildhistory@ \
     --enable-buildhistoryauthor='@buildhistoryauthor@' \
     @network@ \
-    @fetchpremirroronly@ \
-    @generatemirrortarballs@ \
-    @privateinternalcomponentmirror@ \
+    @fetchpremirroronlyoption@ \
+    @generatemirrortarballsoption@ \
+    @privateinternalcomponentmirroroption@ \
     @machines@

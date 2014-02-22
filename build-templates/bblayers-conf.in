@@ -1,4 +1,4 @@
-# Copyright (c) 2008-2013 LG Electronics, Inc.
+# Copyright (c) 2008-2014 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 # changes incompatibly
 LCONF_VERSION = "5"
 
-PALMDIR ?= "@abs_top_srcdir@"
-TMPDIR := "@abs_top_builddir@"
+PALMDIR ?= "@abs_srcdir@"
+TMPDIR := "@abs_builddir@"
 BBPATH = "${PALMDIR}:${TMPDIR}"
 
 # Pull in two optional configuration files to allow the user to override

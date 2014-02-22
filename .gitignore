@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2013 LG Electronics, Inc.
+# Copyright (c) 2012-2014 LG Electronics, Inc.
 
 # A leading / matches only entries in the top-level directory
 # A trailing / matches only directories
@@ -22,7 +22,6 @@
 BUILD-*/
 /Makefile
 TAGS
-autom4te.cache
 /bitbake.lock
 /mcf.status
 __pycache__/

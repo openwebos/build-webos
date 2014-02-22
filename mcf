@@ -28,13 +28,14 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "3.0.4"
+__version__ = "4.0.0"
 
 logger = logging.getLogger(__name__)
 
 submodules = {}
 CLEAN = False
 REMOTE = "origin"
+SSTATE_MIRRORS = ''
 
 def echo_check_call(todo, verbosity, cwd=None):
     if verbosity:
@@ -80,19 +81,25 @@ def enable_debug():
 
 # Essentially, mcf parses options, creates mcf.status, and runs mcf.status.
 
-def process_file(ifile, ofile, replacements):
-    statusfilename = ifile
-    statusfile = open(statusfilename, 'r')
-    status = statusfile.read()
-    statusfile.close()
+def process_file(f, replacements, machine):
+    (ifile, ofile, builddir_specific) = f
+    with open(ifile, 'r') as f:
+        status = f.read()
 
     for i, j in replacements:
         status = status.replace(i, j)
+        if i == '@abs_srcdir@':
+            # these are the only 2 machine specific options, define them here instead of replacements
+            status = status.replace('@abs_builddir@', os.path.join(j, "BUILD-%s" % machine))
+            status = status.replace('@machine@', machine)
 
-    statusfile = open(ofile, 'w')
-    statusfile.write(status)
-    statusfile.close()
-    return
+    if builddir_specific:
+        ofile = os.path.join("BUILD-%s" % machine, ofile)
+    odir = os.path.dirname(ofile)
+    if odir and not os.path.isdir(odir):
+        os.mkdir(odir)
+    with open(ofile, 'w') as f:
+        f.write(status)
 
 def getopts():
     mcfcommand_option = '--command'
@@ -180,8 +187,6 @@ def getopts():
         network.add_argument('--enable-network', dest='network', action='store_true', default=True,
                              help='enable fetching through the network (default: True)')
 
-        # use shorter form without --enable prefix, --disable variant doesn't make sense, because it's disabled by default
-        # option in autoconf's configure.ac is named --enable-sstatemirror (because it's created with AC_ARG_ENABLE macro)
         mirrors.add_argument('--sstatemirror', dest='sstatemirror', action='append',
                              help='set sstatemirror to specified URL, repeat this option if you want multiple sstate mirrors (default: None)')
 
@@ -189,9 +194,6 @@ def getopts():
         default_premirror = 'http://downloads.yoctoproject.org/mirror/sources'
         premirrorurl.add_argument('--enable-default-premirror', dest='premirror', action='store_const', const=default_premirror, default="",
                                   help='enable default premirror URL (default: False)')
-        # allow shorter form without --enable prefix, --disable variant doesn't make sense, because it's disabled by default
-        # but keep also variant with --enable prefix so that we don't have to update config in existing jenkins jobs
-        # option in autoconf's configure.ac is named --enable-premirror (because it's created with AC_ARG_ENABLE macro)
         premirrorurl.add_argument('--premirror', '--enable-premirror', dest='premirror', default='',
                                   help='set premirror to specified URL (default: None)')
 
@@ -232,7 +234,21 @@ def getopts():
 
         parser.add_argument('MACHINE', nargs='+')
 
-    return parser.parse_args(arglist)
+    options = parser.parse_args(arglist)
+    if mcfcommand == 'configure' and options.sstatemirror:
+        # /PATH is automatically added when generating SSTATE_MIRRORS value
+        # verify and show error
+        SSTATE_MIRRORS = "SSTATE_MIRRORS ?= \" \\\n"
+        for m in options.sstatemirror:
+            if m.endswith("/PATH"):
+                print("sstatemirror entry '%s', already ends with '/PATH', remove that" % m)
+                sys.exit(1)
+            if m.endswith("/"):
+                print("sstatemirror entry '%s', ends with '/', remove that" % m)
+                sys.exit(1)
+            SSTATE_MIRRORS += "file://.* %s/PATH \\n \\\n"
+        SSTATE_MIRRORS += "\"\n"
+    return options
 
 WEBOSLAYERS = []
 LAYERSPRIORITY = {}
@@ -754,13 +770,13 @@ def updaterepo(layer):
     newdir = os.chdir(olddir)
     os.getcwd()
 
-def recover_current_mcf_state(srcdir, configure, origoptions):
+def recover_current_mcf_state(srcdir, origoptions):
     mcfstatusfile = os.path.join(srcdir, "mcf.status")
     if not os.path.exists(mcfstatusfile):
         raise Exception("mcf.status does not exist.")
 
     commandlinereconstructed = list()
-    commandlinereconstructed.append(configure)
+    commandlinereconstructed.append('ignored-argv-0')
     start = False
     for line in open(mcfstatusfile,'r'):
         line = line.strip()
@@ -804,17 +820,12 @@ if __name__ == '__main__':
 
     # Allow ../mcf to work.
     srcdir = os.path.dirname(progname)
-    if not os.path.isabs(srcdir):
-        lower_dirname = os.path.join('..', srcdir)
-    else:
-        lower_dirname = srcdir
-
-    configure = os.path.join(lower_dirname, 'configure')
+    abs_srcdir = os.path.abspath(srcdir)
 
     if options.mcfcommand == 'update':
          # recover current mcf state
         updatestate = True
-        options = recover_current_mcf_state(srcdir, configure, options)
+        options = recover_current_mcf_state(srcdir, options)
 
     # read status template, process, write
     if options.trace:
@@ -822,55 +833,67 @@ if __name__ == '__main__':
     if options.clean:
         enable_clean()
 
-    files = [[os.path.join(srcdir, 'build-templates', 'mcf-status.in'), 'mcf.status'],
-             [os.path.join(srcdir, 'Makefile.in'), 'Makefile']]
+    files = [
+        [os.path.join(srcdir, 'Makefile.in'),                             'Makefile',           False],
+        [os.path.join(srcdir, 'build-templates', 'mcf-status.in'),        'mcf.status',         False],
+        [os.path.join(srcdir, 'build-templates', 'bitbake-rc.in'),        'bitbake.rc',         True],
+        [os.path.join(srcdir, 'build-templates', 'Makefile.in'),          'Makefile',           True],
+        [os.path.join(srcdir, 'build-templates', 'bblayers-conf.in'),     'conf/bblayers.conf', True],
+        [os.path.join(srcdir, 'build-templates', 'local-conf.in'),        'conf/local.conf',    True],
+    ]
 
     replacements = [
-        ['@bb_number_threads@', '{}'.format(options.bb_number_threads)],
-        ['@configure@', configure],
-        ['@machines@', ' '.join(options.MACHINE)],
-        ['@machines_only@', ' '.join([i.split(':')[0] for i in options.MACHINE])],
-        ['@parallel_make@', '{}'.format(options.parallel_make)],
+        ['@bb_number_threads@', str(options.bb_number_threads)],
+        ['@parallel_make@',     str(options.parallel_make)],
+        ['@no_network@',               '0'            if options.network                else '1'],
+        ['@fetchpremirroronly@',       '1'            if options.fetchpremirroronly     else '0'],
+        ['@generatemirrortarballs@',   '1'            if options.generatemirrortarballs else '0'],
+        ['@buildhistory_enabled@',     '1'            if options.buildhistory           else '0'],
+        ['@buildhistory_class@',       'buildhistory' if options.buildhistory           else '' ],
+        ['@buildhistory_author_assignment@', 'BUILDHISTORY_COMMIT_AUTHOR ?= "%s"' % options.buildhistoryauthor if options.buildhistoryauthor else ''],
+        ['@premirror_assignment@',           'SOURCE_MIRROR_URL ?= "%s"' % options.premirror   if options.premirror     else ''],
+        ['@premirror_inherit@',              'INHERIT += "own-mirrors"'                        if options.premirror     else ''],
+        ['@sstatemirror_assignment@',        SSTATE_MIRRORS                                    if options.sstatemirror  else ''],
+        ['@privateinternalcomponentmirror@', 'git://github-mirror.palm.com/openwebos'          if options.privateinternalcomponentmirror
+                                        else 'git://github.com/openwebos'],
         ['@premirror@', options.premirror],
-        ['@sstatemirror@', '"{}"'.format(' '.join(options.sstatemirror) if options.sstatemirror else '')],
-        ['@distro@', '{}'.format(readdistro(srcdir))],
+        ['@sstatemirror@', '{}'.format(' '.join(options.sstatemirror) if options.sstatemirror else '')],
         ['@buildhistory@', '--{}-buildhistory'.format('enable' if options.buildhistory else 'disable')],
         ['@buildhistoryauthor@', options.buildhistoryauthor],
         ['@network@', '--{}-network'.format('enable' if options.network else 'disable')],
-        ['@fetchpremirroronly@', '--{}-fetch-premirror-only'.format('enable' if options.fetchpremirroronly else 'disable')],
-        ['@generatemirrortarballs@', '--{}-generate-mirror-tarballs'.format('enable'
+        ['@fetchpremirroronlyoption@', '--{}-fetch-premirror-only'.format('enable' if options.fetchpremirroronly else 'disable')],
+        ['@generatemirrortarballsoption@', '--{}-generate-mirror-tarballs'.format('enable'
                                                                             if options.generatemirrortarballs else 'disable')],
-        ['@privateinternalcomponentmirror@', '--{}-private-internal-component-mirror'.format('enable'
+        ['@privateinternalcomponentmirroroption@', '--{}-private-internal-component-mirror'.format('enable'
                                                                             if options.privateinternalcomponentmirror else 'disable')],
+        ['@machines@', ' '.join(options.MACHINE)],
+        ['@machines_only@', ' '.join([i.split(':')[0] for i in options.MACHINE])],
+        ['@distro@', '{}'.format(readdistro(srcdir))],
         ['@prog@', progname],
         ['@srcdir@', srcdir],
-        ]
+        ['@abs_srcdir@', abs_srcdir],
+    ]
 
     # if icecc is not installed, or version does not match requirements, then disabling icecc is the correct action.
     icestate, iceccinstallmsg = _icecc_installed()
-    if icestate:
-        icecc_disable_str = '--enable-icecc'
-        if options.disable_icecc:
-            icecc_disable_str = '--disable-icecc'
-    else:
-        icecc_disable_str = '--disable-icecc'
 
     icecc_replacements = [
-        ['@icecc_disable_enable@', '{}'.format(icecc_disable_str)],
-        ['@icecc_parallel_make@', '{}'.format(options.icecc_parallel_make)],
-        ['@alternative_icecc_installation@', '{}'.format(options.icecc_location)],
-        ['@icecc_user_package_blacklist@', '"{}"'.format(' '.join(options.icecc_user_package_blacklist) if options.icecc_user_package_blacklist else '')],
-        ['@icecc_user_class_blacklist@', '"{}"'.format(' '.join(options.icecc_user_class_blacklist) if options.icecc_user_class_blacklist else '')],
-        ['@icecc_user_package_whitelist@', '"{}"'.format(' '.join(options.icecc_user_package_whitelist) if options.icecc_user_package_whitelist else '')],
-        ['@icecc_environment_script@', '{}'.format(options.icecc_env_exec)],
-        ]
+        ['@icecc_disable_enable@',           '1' if not icestate or options.disable_icecc else ''],
+        ['@icecc_parallel_make@',            '%s'                             % options.icecc_parallel_make],
+        ['@alternative_icecc_installation@', ('ICECC_PATH ?= "%s"'            % options.icecc_location) if options.icecc_location else ''],
+        ['@icecc_user_package_blacklist@',   ('ICECC_USER_PACKAGE_BL ?= "%s"' % ' '.join(options.icecc_user_package_blacklist)) if options.icecc_user_package_blacklist else ''],
+        ['@icecc_user_class_blacklist@',     ('ICECC_USER_CLASS_BL ?= "%s"'   % ' '.join(options.icecc_user_class_blacklist)) if options.icecc_user_class_blacklist else ''],
+        ['@icecc_user_package_whitelist@',   ('ICECC_USER_PACKAGE_WL ?= "%s"' % ' '.join(options.icecc_user_package_whitelist)) if options.icecc_user_package_whitelist else ''],
+        ['@icecc_environment_script@',       'ICECC_ENV_EXEC ?= "%s"' % options.icecc_env_exec if options.icecc_location else ''],
+        ['@icecc_disable_enable_mcf@',       '--%s-icecc'                     % ('disable' if not icestate or options.disable_icecc else 'enable')],
+        ['@alternative_icecc_installation_mcf@', options.icecc_location if options.icecc_location else ''],
+        ['@icecc_environment_script_mcf@',       options.icecc_env_exec if options.icecc_location else ''],
+        ['@icecc_user_package_blacklist_mcf@',   (' '.join(options.icecc_user_package_blacklist)) if options.icecc_user_package_blacklist else ''],
+        ['@icecc_user_class_blacklist_mcf@',     (' '.join(options.icecc_user_class_blacklist)) if options.icecc_user_class_blacklist else ''],
+        ['@icecc_user_package_whitelist_mcf@',   (' '.join(options.icecc_user_package_whitelist)) if options.icecc_user_package_whitelist else ''],
+    ]
 
     replacements =  replacements + icecc_replacements
-
-    for i, j in files:
-        process_file(i, j, replacements)
-
-    echo_check_call('/bin/chmod a+x mcf.status', options.verbose)
 
     readlayers(srcdir)
     if updatestate:
@@ -886,36 +909,10 @@ if __name__ == '__main__':
 
     for machine in options.MACHINE:
         logger.info('MCF-%s: Configuring build directory BUILD-%s' % (__version__, machine))
-        logger.info('configure is {}'.format(configure))
-
-        cmd = '([ -d BUILD-{} ] || mkdir BUILD-{})'.format(machine, machine)
-        cmd += ' && (cd BUILD-{} && PWD= @configure@ \
-            --enable-bb-number-threads=@bb_number_threads@ \
-            --enable-parallel-make=@parallel_make@ \
-            --enable-premirror=@premirror@ \
-            --enable-sstatemirror=@sstatemirror@ \
-            --enable-distro=@distro@ \
-            @buildhistory@ \
-            --enable-buildhistoryauthor="@buildhistoryauthor@" \
-            @network@ \
-            @fetchpremirroronly@ \
-            @privateinternalcomponentmirror@ \
-            @generatemirrortarballs@ \
-            --build=ubuntu \
-            {} \
-            --enable-icecc-parallel-make=@icecc_parallel_make@ \
-            --enable-icecc-location=@alternative_icecc_installation@ \
-            --enable-icecc-user-package-blacklist=@icecc_user_package_blacklist@ \
-            --enable-icecc-user-class-blacklist=@icecc_user_class_blacklist@ \
-            --enable-icecc-user-package-whitelist=@icecc_user_package_whitelist@ \
-            --enable-icecc-env-exec=@icecc_environment_script@ \
-            --host={})'.format(machine, icecc_disable_str, machine)
-
-        for i, j in replacements:
-            cmd = cmd.replace(i, j)
-
-        echo_check_call(cmd, options.verbose)
-
+        for f in files:
+            process_file(f, replacements, machine)
         writebblayersconf(srcdir, machine)
+        logger.info('MCF-%s: Done configuring build directory BUILD-%s' % (__version__, machine))
 
-        logger.info('Done.\n')
+    echo_check_call('/bin/chmod a+x mcf.status', options.verbose)
+    logger.info('Done.\n')
