@@ -302,16 +302,13 @@ def downloadrepo(layer,update=False):
                 refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch -r"))), encoding='utf-8', errors='strict')
                 refbranch = refbranchlist.splitlines()
                 for ibranch in refbranch:
-                    if ibranch[len(ibranch)-len(newbranch):len(ibranch)] == newbranch:
-                        if 'HEAD' in ibranch:
-                            continue
-                        else:
-                            foundbranch = True
-                            print( " found %s " % ibranch )
-                            cmd ='git checkout -B {0} {1}'.format(newbranch,ibranch)
-                            if subprocess.call(shlex.split(echo_cmd(cmd))):
-                                raise Exception('Can not checkout out [{}] branch'.format(newbranch))
-                            break
+                    if ibranch == "  origin/%s" % newbranch:
+                        foundbranch = True
+                        print( " found %s " % ibranch )
+                        cmd ='git checkout -B {0} {1}'.format(newbranch,ibranch)
+                        if subprocess.call(shlex.split(echo_cmd(cmd))):
+                            raise Exception('Can not checkout out [{}] branch'.format(newbranch))
+                        break
 
         currentbranch = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD"))), encoding='utf-8', errors='strict').rstrip()
         newcommitid = COMMITIDSNEW[layer]
@@ -531,23 +528,22 @@ def reposanitycheck(layer):
         foundlocalbranch = False
         needcheckout = True
         for ibranch in refbranch:
-            if ibranch[len(ibranch)-len(newbranch):len(ibranch)] == newbranch:
-                if ibranch.startswith('* '):
-                    needcheckout = False
+            if ibranch == "  %s" % newbranch:
                 foundlocalbranch = True
+                break
+            if ibranch == "* %s" % newbranch:
+                foundlocalbranch = True
+                needcheckout = False
                 break
 
         refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch -r"))), encoding='utf-8', errors='strict')
         refbranch = refbranchlist.splitlines()
         foundremotebranch = False
         for ibranch in refbranch:
-            if ibranch[len(ibranch)-len(newbranch):len(ibranch)] == newbranch:
-                if 'HEAD' in ibranch:
-                    continue
-                else:
-                    foundremotebranch = True
-                    remotebranch = ibranch.strip()
-                    break
+            if ibranch == "  origin/%s" % newbranch:
+                foundremotebranch = True
+                remotebranch = ibranch.strip()
+                break
 
         if foundlocalbranch and foundremotebranch:
             if needcheckout and subprocess.call(shlex.split(echo_cmd('git checkout {}'.format(newbranch)))):
