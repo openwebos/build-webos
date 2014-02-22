@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # Copyright (c) 2008-2014 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,8 +14,6 @@
 # limitations under the License.
 
 
-from __future__ import with_statement, print_function, unicode_literals, absolute_import, division
-
 import argparse
 import errno
 import logging
@@ -23,34 +21,22 @@ import os
 import subprocess
 import sys
 import re
-import shlex
 from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.0"
+__version__ = "4.0.1"
 
 logger = logging.getLogger(__name__)
 
 submodules = {}
 CLEAN = False
+TRACE = False
 REMOTE = "origin"
 SSTATE_MIRRORS = ''
 
-def echo_check_call(todo, verbosity, cwd=None):
-    if verbosity:
-        cmd = 'set -x; ' + todo
-    else:
-        cmd = todo
-
-    return subprocess.check_call(cmd,
-                                 stdout=sys.stdout,
-                                 stderr=sys.stderr,
-                                 shell=True,
-                                 cwd=cwd)
-
-def echo_check_call2(todo, verbosity=False):
-    if verbosity:
+def echo_check_call(todo, verbosity=False):
+    if verbosity or TRACE:
         cmd = 'set -x; ' + todo
     else:
         cmd = todo
@@ -59,22 +45,22 @@ def echo_check_call2(todo, verbosity=False):
 
     return str(subprocess.check_output(cmd, shell=True), encoding='utf-8', errors='strict')
 
-def echo_cmd(cmd):
-    logger.debug(cmd)
-    return cmd
+def enable_trace():
+    global TRACE
+    TRACE = True
 
 def enable_clean():
-    print('Warning: running in clean non-interactive mode, all possible local changes and untracked files will be removed')
+    logger.warn('Running in clean non-interactive mode, all possible local changes and untracked files will be removed')
     global CLEAN
     CLEAN = True
 
-def enable_debug():
+def set_log_level(level):
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
     f = logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s', datefmt='%Y-%m-%dT%H:%M:%S')
 
     s = logging.StreamHandler()
-    s.setLevel('DEBUG')
+    s.setLevel(level)
 
     s.setFormatter(f)
     logging.getLogger('').addHandler(s)
@@ -122,16 +108,10 @@ def getopts():
 
     verbosity = general.add_mutually_exclusive_group()
 
-    verbosity.add_argument('-s', '--silent', dest='verbose',
-                         action='store_false', default=False,
-                         help='work silently')
-
-    verbosity.add_argument('-v', '--verbose', dest='verbose',
-                       action='store_true', default=False,
-                       help='work verbosely')
+    verbosity.add_argument('-s', '--silent',  action='count', help='work silently, repeat the option twice to hide also the warnings, tree times to hide the errors as well')
+    verbosity.add_argument('-v', '--verbose', action='count', help='work verbosely, repeat the option twice for more debug output')
 
     general.add_argument('-c', '--clean', dest='clean', action='store_true', default=False, help='clean checkout - WARN: removes all local changes')
-    general.add_argument('-x', '--trace', dest='trace', action='store_true', default=False, help='trace')
     general.add_argument('-V', '--version', action='version', version='%(prog)s {0}'.format(__version__), help='print version and exit')
 
     general.add_argument(mcfcommand_option, dest=mcfcommand_dest, choices=mcfcommand_choices, default=mcfcommand_default,
@@ -241,10 +221,10 @@ def getopts():
         SSTATE_MIRRORS = "SSTATE_MIRRORS ?= \" \\\n"
         for m in options.sstatemirror:
             if m.endswith("/PATH"):
-                print("sstatemirror entry '%s', already ends with '/PATH', remove that" % m)
+                logger.error("sstatemirror entry '%s', already ends with '/PATH', remove that" % m)
                 sys.exit(1)
             if m.endswith("/"):
-                print("sstatemirror entry '%s', ends with '/', remove that" % m)
+                logger.error("sstatemirror entry '%s', ends with '/', remove that" % m)
                 sys.exit(1)
             SSTATE_MIRRORS += "file://.* %s/PATH \\n \\\n"
         SSTATE_MIRRORS += "\"\n"
@@ -268,7 +248,6 @@ TAGSINFONEW = {}
 REPOPATCHDIR = {}
 
 def _icecc_installed():
-    msg = ''
     try:
         # Note that if package is not installed following call will throw an exception
         iceinstallstatus,iceversion = subprocess.check_output("dpkg-query -W icecc" ,
@@ -277,19 +256,19 @@ def _icecc_installed():
         # We are expecting icecc for the name
         if 'icecc' == iceinstallstatus:
              if '1.0.1-1' == iceversion:
-                 return True, ''
+                 return True
              else:
-                 msg =  "WARNING: Wrong icecc package version {} is installed, disabling build from using ICECC.\n".format(iceversion) + \
-                        "Please check 'How To Install ICECC on Your Workstation (Client)'\n" + \
-                        "http://wiki.lgsvl.com/pages/viewpage.action?pageId=96175316"
-                 return False, msg
+                 logger.warn("WARNING: Wrong icecc package version {} is installed, disabling build from using ICECC.\n".format(iceversion) + \
+                             "Please check 'How To Install ICECC on Your Workstation (Client)'\n" + \
+                             "http://wiki.lgsvl.com/pages/viewpage.action?pageId=96175316")
+                 return False
         else:
-             msg = 'WARNING: ICECC package installation check failed, disabling build from using ICECC.'
-             return False, msg
+             logger.warn('WARNING: ICECC package installation check failed, disabling build from using ICECC.')
+             return False
 
     except:
-        msg = 'WARNING: ICECC package installation check failed, disabling build from using ICECC.'
-        return False, msg
+        logger.warn('WARNING: ICECC package installation check failed, disabling build from using ICECC.')
+        return False
 
 def location_to_dirname(layer, location):
     str1 = location.split('/')
@@ -345,7 +324,7 @@ def parsesubmissions(layer):
 def readdistro(path):
     sys.path.insert(0,path)
     if not os.path.isfile(os.path.join(path,'weboslayers.py')):
-        raise Exception("Error:" 'Configuration file {} does not exist!'.format(os.path.join(path,'weboslayers.py')))
+        raise Exception("Error:" 'Configuration file %s does not exist!' % os.path.join(path,'weboslayers.py'))
 
     from weboslayers import Distribution
     return Distribution
@@ -353,86 +332,81 @@ def readdistro(path):
 def downloadprojects(srcdir,verbosity):
     for layer in WEBOSLAYERS:
         if os.path.exists(os.path.abspath( DIRNAME[layer] ) ):
-            print("Note:", 'Git repo {} exists! Skipping download.'.format(layer))
+            logger.info("Git repo %s exists! Skipping download." % layer)
             continue
         if URLS[layer] and LOCATIONS[layer]:
-            raise Exception("Error:", 'Both url and location are defined for {} layer!'.format(layer))
+            raise Exception("Error:", 'Both url and location are defined for %s layer!' % layer)
         if not URLS[layer]:
             if not LOCATIONS[layer]:
-                raise Exception("Error:", 'Must define {} git repo or location!'.format(layer))
+                raise Exception("Error:", 'Must define %s git repo or location!' % layer)
             continue
 
         downloadrepo(layer)
 
 def downloadrepo(layer,update=False):
     if not update:
-        cmd = 'git clone {}'.format(URLS[layer])
-        if echo_check_call(cmd,True):
-            raise Exception('Error: running {}'.format(cmd))
+        cmd = 'git clone %s' % URLS[layer]
+        echo_check_call(cmd)
 
         olddir = os.getcwd()
         os.chdir(DIRNAME[layer])
         newbranch = BRANCHINFONEW[layer]
 
         if newbranch:
-            refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch"))), encoding='utf-8', errors='strict')
+            refbranchlist = echo_check_call("git branch")
             refbranch = refbranchlist.splitlines()
             foundbranch = False
             for ibranch in refbranch:
                 if newbranch in ibranch:
                     foundbranch = True
             if not foundbranch:
-                refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch -r"))), encoding='utf-8', errors='strict')
+                refbranchlist = echo_check_call("git branch -r")
                 refbranch = refbranchlist.splitlines()
                 for ibranch in refbranch:
                     if ibranch == "  %s/%s" % (REMOTE, newbranch):
                         foundbranch = True
-                        print( " found %s " % ibranch )
-                        cmd ='git checkout -B {0} {1}'.format(newbranch,ibranch)
-                        if subprocess.call(shlex.split(echo_cmd(cmd))):
-                            raise Exception('Can not checkout out [{}] branch'.format(newbranch))
+                        logger.info( " found %s " % ibranch )
+                        cmd ='git checkout -B %s %s' % (newbranch,ibranch)
+                        echo_check_call(cmd)
                         break
 
-        currentbranch = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD"))), encoding='utf-8', errors='strict').rstrip()
+        currentbranch = echo_check_call("git rev-parse --abbrev-ref HEAD").rstrip()
         newcommitid = COMMITIDSNEW[layer]
         if newcommitid:
             if newcommitid.startswith('refs/changes/'):
                 if newbranch and newbranch != currentbranch:
                     # older git doesn't allow to update reference on currently checked out branch
-                    cmd ='git fetch {0} {1} && git checkout -B {2} FETCH_HEAD'.format(REMOTE, newcommitid, newbranch)
+                    cmd ='git fetch %s %s && git checkout -B %s FETCH_HEAD' % (REMOTE, newcommitid, newbranch)
                 elif newbranch:
                     # we're already on requested branch
-                    cmd ='git fetch {0} {1} && git reset --hard FETCH_HEAD'.format(REMOTE, newcommitid)
+                    cmd ='git fetch %s %s && git reset --hard FETCH_HEAD' % (REMOTE, newcommitid)
                 else:
                     # we don't have any branch preference use detached
-                    cmd ='git fetch {0} {1} && git checkout FETCH_HEAD'.format(REMOTE, newcommitid)
-                if subprocess.call(echo_cmd(cmd), shell=True):
-                    raise Exception('Can not checkout reference [{}]'.format(REMOTE, newcommitid))
+                    cmd ='git fetch %s %s && git checkout FETCH_HEAD' % (REMOTE, newcommitid)
+                echo_check_call(cmd)
             else:
                 if newbranch and newbranch != currentbranch:
                     # older git doesn't allow to update reference on currently checked out branch
-                    cmd ='git checkout -B {0} {1}'.format(newbranch,newcommitid)
+                    cmd ='git checkout -B %s %s' % (newbranch,newcommitid)
                 elif newbranch:
                     # we're already on requested branch
-                    cmd ='git reset --hard {0}'.format(newcommitid)
+                    cmd ='git reset --hard %s' % newcommitid
                 else:
                     # we don't have any branch preference use detached
-                    cmd ='git checkout {0}'.format(newcommitid)
-                if subprocess.call(shlex.split(echo_cmd(cmd))):
-                    raise Exception('Can not checkout commit id [{}]'.format(newcommitid))
+                    cmd ='git checkout %s' % newcommitid
+                echo_check_call(cmd)
 
         newtag = TAGSINFONEW[layer]
         if newtag:
             if newbranch and newbranch != currentbranch:
                 # older git doesn't allow to update reference on currently checked out branch
-                cmd ='git checkout -B {0} {1}'.format(newbranch,newtag)
+                cmd ='git checkout -B %s %s' % (newbranch,newtag)
             elif newbranch:
                 # we're already on requested branch
-                cmd ='git reset --hard {}'.format(newtag)
+                cmd ='git reset --hard %s' % newtag
             else:
-                cmd ='git checkout {}'.format(newtag)
-            if subprocess.call(shlex.split(echo_cmd(cmd))):
-                raise Exception('Error: can not checkout tag [{}]'.format(newtag))
+                cmd ='git checkout %s' % newtag
+            echo_check_call(cmd)
 
         os.chdir(olddir)
     else:
@@ -461,15 +435,15 @@ def traversedir (root):
 
 def parseCollections (srcdir):
     for layer in WEBOSLAYERS:
-        if ( URLS[layer] ):
+        if URLS[layer]:
             pathstr = DIRNAME[layer]
-        if ( LOCATIONS[layer] ):
+        if LOCATIONS[layer]:
             pathstr = os.path.abspath( LOCATIONS[layer] )
 
-        if ( os.path.exists( '{}'.format(pathstr)) ):
+        if os.path.exists(pathstr):
             traversedir(pathstr)
         else:
-            raise Exception("Error:", 'directory does not exist {} !'.format(pathstr))
+            raise Exception("Error:", 'directory does not exist %s !' % pathstr)
 
 def writebblayersconf(sourcedir, machine):
     f = open(os.path.join(sourcedir, "BUILD-{0}".format(machine), "conf", "bblayers.conf"), 'a')
@@ -486,9 +460,9 @@ def writebblayersconf(sourcedir, machine):
                     leftside = leftside.replace('-','_')
                     leftside = leftside.upper()
                     if not URLS[layer]:
-                        str = "{0}_LAYER ?= \"{1}\" ".format(leftside, LOCATIONS[layer])
+                        str = "%s_LAYER ?= \"%s\" " % (leftside, LOCATIONS[layer])
                     else:
-                        str = "{0}_LAYER ?= \"${{PALMDIR}}/{1}\"".format(leftside, COLLECTION_PATH[layer])
+                        str = "%s_LAYER ?= \"${PALMDIR}/%s\"" % (leftside, COLLECTION_PATH[layer])
 
                     f.write(str)
                     f.write('\n')
@@ -505,11 +479,7 @@ def writebblayersconf(sourcedir, machine):
             if layer not in processed_layers:
                 if LAYERSPRIORITY[layer] == p:
                     processed_layers.append(layer)
-                    leftside = layer
-                    leftside = "{}".format(layer)
-                    leftside = leftside.replace('-','_')
-                    leftside = leftside.upper()
-                    f.write("   ${{{0}_LAYER}} \\".format(leftside))
+                    f.write("   ${%s_LAYER} \\" % layer.replace('-','_').upper())
                     f.write('\n')
                     break
     f.write('  "')
@@ -517,7 +487,7 @@ def writebblayersconf(sourcedir, machine):
     for layer in LAYERSPRIORITY:
         if LAYERSPRIORITY[layer] <= 0 :
             continue
-        f.write("BBFILE_PRIORITY_{0} = \"{1}\"".format(COLLECTION_NAME[layer], LAYERSPRIORITY[layer]))
+        f.write("BBFILE_PRIORITY_%s = \"%s\"" % (COLLECTION_NAME[layer], LAYERSPRIORITY[layer]))
         f.write('\n')
     f.close
 
@@ -540,7 +510,7 @@ def updatelayers (sourcedir):
                 layers_sanity.append(layer)
 
     if layers_sanity:
-        print('NOTE: Found local changes for repos(s) {0}\n'.format(layers_sanity))
+        logger.info('Found local changes for repos(s) %s' % layers_sanity)
 
     # update layers
     for layer in WEBOSLAYERS:
@@ -548,64 +518,62 @@ def updatelayers (sourcedir):
             downloadrepo(layer,True)
 
 def printupdatesummary ():
-    print ('\nRepo Update Summary')
-    print ('===================')
+    logger.info('Repo Update Summary')
+    logger.info('===================')
     if not len(SUMMARYINFO):
-         print ('No local changes found')
+         logger.info('No local changes found')
     for layer in SUMMARYINFO:
         mstatus = SUMMARYINFO[layer]
-        print ('[{}] has the following changes:'.format(layer))
+        logger.info('[%s] has the following changes:' % layer)
         if int(mstatus) & 1:
-            print ('    *) local uncommitted changes, use \'git stash pop\' to retrieve')
+            logger.info('    *) local uncommitted changes, use \'git stash pop\' to retrieve')
         if int(mstatus) & 2:
-            print ('    *) local committed changes, patches are backed up in {}/'.format(REPOPATCHDIR[layer]))
+            logger.info('    *) local committed changes, patches are backed up in %s/' % REPOPATCHDIR[layer])
         if int(mstatus) & 4:
-            print ('    *) local untracked changes')
+            logger.info('    *) local untracked changes')
         if BRANCHINFONEW[layer] != BRANCHINFOCURRENT[layer]:
-            print ('    *) switched branches from {0} to {1}'.format(BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer]))
-    print ('\n')
+            logger.info('    *) switched branches from %s to %s' % (BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer]))
 
 def reposanitycheck(layer):
     olddir = os.getcwd()
     os.chdir(DIRNAME[layer])
 
     # Sync with remote repo
-    if subprocess.call(shlex.split(echo_cmd('git remote update'))):
-        raise Exception('Failed to fetch {} repo'.format(layer))
+    echo_check_call('git remote update')
 
-    BRANCHINFOCURRENT[layer] = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD"))), encoding='utf-8', errors='strict').rstrip()
+    BRANCHINFOCURRENT[layer] = echo_check_call("git rev-parse --abbrev-ref HEAD").rstrip()
 
     res = False
     msgs = 0
 
     if CLEAN:
-        if subprocess.check_output(shlex.split(echo_cmd("git status --porcelain -s"))):
-            print('Warning: Removing all local changes and untracked files in [{0}]'.format(layer))
+        if echo_check_call("git status --porcelain -s"):
+            logger.warn('Removing all local changes and untracked files in [%s]' % layer)
             # abort rebase if git pull --rebase from update_layers got stuck on some local commit
             try:
-                subprocess.check_output(shlex.split(echo_cmd("git rebase --abort")))
+                echo_check_call("git rebase --abort")
             except subprocess.CalledProcessError:
                 # we can ignore this one
                 pass
   
-            subprocess.check_output(shlex.split(echo_cmd("git stash clear")))
-            subprocess.check_output(shlex.split(echo_cmd("git clean -fdx")))
-            subprocess.check_output(shlex.split(echo_cmd("git reset --hard")))
+            echo_check_call("git stash clear")
+            echo_check_call("git clean -fdx")
+            echo_check_call("git reset --hard")
     else:
-        print('Checking for local changes in [{0}]'.format(layer))
-        if subprocess.check_output(shlex.split(echo_cmd("git status --porcelain --u=no -s"))):
-            print('Warning: found local uncommited changes in [{0}]'.format(layer))
+        logger.info('Checking for local changes in [%s]' % layer)
+        if echo_check_call("git status --porcelain --u=no -s"):
+            logger.warn('Found local uncommited changes in [%s]' % layer)
             msgs += 1
-            subprocess.check_output(shlex.split(echo_cmd("git stash")))
+            echo_check_call("git stash")
             res = True
 
-        if subprocess.check_output(echo_cmd("git status --porcelain -s | grep -v '^?? MCF-PATCHES_' || true"), shell=True):
-            print('Warning: found local untracked changes in [{0}]'.format(layer))
+        if echo_check_call("git status --porcelain -s | grep -v '^?? MCF-PATCHES_' || true"):
+            logger.warn('Found local untracked changes in [%s]' % layer)
             msgs += 4
             res = True
 
     try:
-        remote = echo_check_call2('git remote | grep "^%s$"' % REMOTE)
+        remote = echo_check_call('git remote | grep "^%s$"' % REMOTE)
     except subprocess.CalledProcessError:
         remote = ''
 
@@ -614,7 +582,7 @@ def reposanitycheck(layer):
         raise Exception("Layer %s doesn't have the remote '%s'" % (layer, REMOTE))
 
     try:
-        urlcurrent = echo_check_call2("git config remote.%s.url" % REMOTE)
+        urlcurrent = echo_check_call("git config remote.%s.url" % REMOTE)
     except subprocess.CalledProcessError:
         # git config returns 1 when the option isn't set
         urlcurrent = ''
@@ -627,15 +595,17 @@ def reposanitycheck(layer):
 
     if urlcurrent != URLS[layer]:
         logger.warn("Changing url for remote '%s' from '%s' to '%s'" % (REMOTE, urlcurrent, URLS[layer]))
-        echo_check_call2("git remote set-url %s %s" % (REMOTE, URLS[layer]))
+        echo_check_call("git remote set-url %s %s" % (REMOTE, URLS[layer]))
         # Sync with new remote repo
-        if subprocess.call(shlex.split(echo_cmd('git remote update'))):
-            raise Exception('Failed to fetch {} repo'.format(layer))
+        try:
+            echo_check_call('git remote update')
+        except subprocess.CalledProcessError:
+            raise Exception('Failed to fetch %s repo' % layer)
 
 
     newbranch = BRANCHINFONEW[layer]
     if newbranch:
-        refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch"))), encoding='utf-8', errors='strict')
+        refbranchlist = echo_check_call("git branch")
         refbranch = refbranchlist.splitlines()
         foundlocalbranch = False
         needcheckout = True
@@ -648,7 +618,7 @@ def reposanitycheck(layer):
                 needcheckout = False
                 break
 
-        refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch -r"))), encoding='utf-8', errors='strict')
+        refbranchlist = echo_check_call("git branch -r")
         refbranch = refbranchlist.splitlines()
         foundremotebranch = False
         for ibranch in refbranch:
@@ -658,48 +628,43 @@ def reposanitycheck(layer):
                 break
 
         if foundlocalbranch and foundremotebranch:
-            if needcheckout and subprocess.call(shlex.split(echo_cmd('git checkout {}'.format(newbranch)))):
-                raise Exception('Failed git checkout {}'.format(newbranch))
+            if needcheckout:
+                echo_check_call('git checkout %s' % newbranch)
 
-            head = subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD")))
-            head = str(head, encoding='utf-8', errors='strict').rstrip()
-            patchdir = './MCF-PATCHES_{0}-{1}'.format(head.replace('/','_'), timestamp)
-            REPOPATCHDIR[layer] = "{0}/{1}".format(DIRNAME[layer], patchdir)
-            cmd ='git format-patch {0}..{1} -o {2}'.format(remotebranch,newbranch,patchdir)
-            rawpatches = str(subprocess.check_output(shlex.split(echo_cmd(cmd))), encoding='utf-8', errors='strict')
+            head = echo_check_call("git rev-parse --abbrev-ref HEAD").rstrip()
+            patchdir = './MCF-PATCHES_%s-%s' % (head.replace('/','_'), timestamp)
+            REPOPATCHDIR[layer] = "%s/%s" % (DIRNAME[layer], patchdir)
+            cmd ='git format-patch %s..%s -o %s' % (remotebranch,newbranch,patchdir)
+            rawpatches = echo_check_call(cmd)
             patches = rawpatches.splitlines()
             num = len(patches)
-            # print( ' info: number of patches: {0} '.format(num))
+            # logger.info( ' info: number of patches: %s ' % num)
             if num > 0:
                 msgs += 2
                 res = True
             else:
                 # remove empty dir if there weren't any patches created by format-patch
-                cmd ='rmdir --ignore-fail-on-non-empty {0}'.format(patchdir)
-                subprocess.check_output(shlex.split(echo_cmd(cmd)))
+                cmd ='rmdir --ignore-fail-on-non-empty %s' % patchdir
+                echo_check_call(cmd)
 
             # [GF-58476] As we already switched to newbranch, HEAD will always point to current.
             # This will allow us to work around the problem of having @ in the branch name
-            trackingbranch = str(subprocess.check_output(shlex.split(echo_cmd("git rev-parse --abbrev-ref HEAD@{upstream}"))), encoding='utf-8', errors='strict')
+            trackingbranch = echo_check_call("git rev-parse --abbrev-ref HEAD@{upstream}")
             trackingbranch = trackingbranch.split()[0]
             if trackingbranch != remotebranch:
                 # to ensure we are tracking remote
-                if subprocess.call(shlex.split(echo_cmd('git branch --set-upstream {0} {1}'.format(newbranch, remotebranch)))):
-                    raise Exception('Failed to set remote tracking on branch {}'.format(newbranch))
+                echo_check_call('git branch --set-upstream %s %s' % (newbranch, remotebranch))
 
         elif not foundlocalbranch and foundremotebranch:
-            if subprocess.call(shlex.split(echo_cmd('git checkout -b {0} {1}'.format(newbranch, remotebranch)))):
-                raise Exception('Failed to checkout branch {}'.format(newbranch))
+            echo_check_call('git checkout -b %s %s' % (newbranch, remotebranch))
         else:
             # anything else is failure
-            raise Exception('Could not find local and remote branches for {}'.format(newbranch))
+            raise Exception('Could not find local and remote branches for %s' % newbranch)
     else:
             raise Exception('Undefined branch name')
 
     if res:
         SUMMARYINFO[layer] = msgs
-
-    print('Done.\n')
 
     newdir = os.chdir(olddir)
     return res
@@ -707,7 +672,7 @@ def reposanitycheck(layer):
 # Taken from bitbake/lib/bb/fetch2/git.py with modifications for mcf usage
 def contains_ref(tag):
     cmd = "git log --pretty=oneline -n 1 %s -- 2>/dev/null | wc -l" % (tag)
-    output = str(subprocess.check_output(cmd, shell=True), encoding='utf-8', errors='strict')
+    output = echo_check_call(cmd)
     if len(output.split()) > 1:
         raise Exception("Error: '%s' gave output with more then 1 line unexpectedly, output: '%s'" % (cmd, output))
     return output.split()[0] != "0"
@@ -716,59 +681,70 @@ def updaterepo(layer):
     olddir = os.getcwd()
     os.chdir(DIRNAME[layer])
 
-    COMMITIDSCURRENT[layer] = str(subprocess.check_output(shlex.split(echo_cmd("git  log --pretty=format:%h -1"))), encoding='utf-8', errors='strict')
+    COMMITIDSCURRENT[layer] = echo_check_call("git  log --pretty=format:%h -1")
 
     newcommitid = COMMITIDSNEW[layer]
     currentcommitid = COMMITIDSCURRENT[layer]
     newbranch = BRANCHINFONEW[layer]
     currentbranch = BRANCHINFOCURRENT[layer]
 
-    logger.debug("updaterepo({0}) dir {1}, id {2}, newid {3}, branch {4}, newbranch {5}".format(layer, DIRNAME[layer], currentcommitid, newcommitid, currentbranch, newbranch))
+    logger.debug("updaterepo(%s) dir %s, id %s, newid %s, branch %s, newbranch %s" % (layer, DIRNAME[layer], currentcommitid, newcommitid, currentbranch, newbranch))
 
     if newcommitid != currentcommitid:
-        print('Updating [{0}]'.format(layer))
+        logger.info('Updating [%s]' % layer)
         if newcommitid:
             if newcommitid.startswith('refs/changes/'):
                 if newbranch and newbranch != currentbranch:
                     # older git doesn't allow to update reference on currently checked out branch
-                    cmd ='git fetch origin {0} && git checkout -B {1} FETCH_HEAD'.format(newcommitid,newbranch)
+                    cmd ='git fetch origin %s && git checkout -B %s FETCH_HEAD' % (newcommitid,newbranch)
                 elif newbranch:
                     # we're already on requested branch
-                    cmd ='git fetch origin {0} && git reset --hard FETCH_HEAD'.format(newcommitid)
+                    cmd ='git fetch origin %s && git reset --hard FETCH_HEAD' % newcommitid
                 else:
                     # we don't have any branch preference use detached
-                    cmd ='git fetch origin {0} && git checkout FETCH_HEAD'.format(newcommitid)
-                if subprocess.call(echo_cmd(cmd), shell=True):
-                    raise Exception('Can not update to reference [{}]'.format(newcommitid))
+                    cmd ='git fetch origin %s && git checkout FETCH_HEAD' % newcommitid
+                echo_check_call(cmd)
             else:
                 if not contains_ref(newcommitid):
-                    if subprocess.call(shlex.split(echo_cmd('git fetch'))):
-                        raise Exception('Error: git fetch failed for {}'.format(layer))
+                    echo_check_call('git fetch')
                 if newbranch and newbranch != currentbranch:
                     # older git doesn't allow to update reference on currently checked out branch
-                    cmd ='git checkout -B {0} {1}'.format(newbranch,newcommitid)
+                    cmd ='git checkout -B %s %s' % (newbranch,newcommitid)
                 elif newbranch:
                     # we're already on requested branch
-                    cmd ='git reset --hard {0}'.format(newcommitid)
+                    cmd ='git reset --hard %s' % newcommitid
                 else:
                     # we don't have any branch preference use detached
-                    cmd ='git checkout {0}'.format(newcommitid)
-                if subprocess.call(shlex.split(echo_cmd(cmd))):
-                    raise Exception('Can not update to commit id [{}]'.format(newcommitid))
+                    cmd ='git checkout %s' % newcommitid
+                echo_check_call(cmd)
         else:
             if CLEAN:
-                if subprocess.call(shlex.split(echo_cmd('git reset --hard origin/%s' % newbranch))):
-                    raise Exception('Error: git reset --hard origin/%s' % newbranch)
+                echo_check_call('git reset --hard origin/%s' % newbranch)
             else:
                 # current branch always tracks a remote one
-                if subprocess.call(shlex.split(echo_cmd('git pull origin'))):
-                    raise Exception('Error: git pull origin')
-        print('Done.\n')
+                echo_check_call('git pull origin')
+        logger.info('Done updating [%s]' % layer)
     else:
-        print(('[{}] is up-to-date.'.format(layer)))
+        logger.info(('[%s] is up-to-date.' % layer))
 
     newdir = os.chdir(olddir)
     os.getcwd()
+
+def set_verbosity(options):
+    if options.silent and options.silent == 1:
+        set_log_level('WARNING')
+    elif options.silent and options.silent == 2:
+        set_log_level('ERROR')
+    elif options.silent and options.silent >= 3:
+        set_log_level('CRITICAL')
+    elif options.verbose and options.verbose == 1:
+        set_log_level('DEBUG')
+    elif options.verbose and options.verbose >= 2:
+        set_log_level('DEBUG')
+        # but also run every system command with set -x
+        enable_trace()
+    else:
+        set_log_level('INFO')
 
 def recover_current_mcf_state(srcdir, origoptions):
     mcfstatusfile = os.path.join(srcdir, "mcf.status")
@@ -801,10 +777,10 @@ def recover_current_mcf_state(srcdir, origoptions):
 
     sys.argv = commandlinereconstructed
     options = getopts()
-    # always use trace/clean/verbose flags from origoptions not mcf.status
-    options.trace = origoptions.trace
+    # always use clean/verbose/silent flags from origoptions not mcf.status
     options.clean = origoptions.clean
     options.verbose = origoptions.verbose
+    options.silent = origoptions.silent
     return options
 
 
@@ -827,9 +803,8 @@ if __name__ == '__main__':
         updatestate = True
         options = recover_current_mcf_state(srcdir, options)
 
-    # read status template, process, write
-    if options.trace:
-        enable_debug()
+    set_verbosity(options)
+
     if options.clean:
         enable_clean()
 
@@ -857,25 +832,24 @@ if __name__ == '__main__':
         ['@privateinternalcomponentmirror@', 'git://github-mirror.palm.com/openwebos'          if options.privateinternalcomponentmirror
                                         else 'git://github.com/openwebos'],
         ['@premirror@', options.premirror],
-        ['@sstatemirror@', '{}'.format(' '.join(options.sstatemirror) if options.sstatemirror else '')],
-        ['@buildhistory@', '--{}-buildhistory'.format('enable' if options.buildhistory else 'disable')],
+        ['@sstatemirror@', ' '.join(options.sstatemirror) if options.sstatemirror else ''],
         ['@buildhistoryauthor@', options.buildhistoryauthor],
-        ['@network@', '--{}-network'.format('enable' if options.network else 'disable')],
-        ['@fetchpremirroronlyoption@', '--{}-fetch-premirror-only'.format('enable' if options.fetchpremirroronly else 'disable')],
-        ['@generatemirrortarballsoption@', '--{}-generate-mirror-tarballs'.format('enable'
-                                                                            if options.generatemirrortarballs else 'disable')],
-        ['@privateinternalcomponentmirroroption@', '--{}-private-internal-component-mirror'.format('enable'
-                                                                            if options.privateinternalcomponentmirror else 'disable')],
+        ['@buildhistory@',                         '--%s-buildhistory'                      % ('enable' if options.buildhistory                   else 'disable')],
+        ['@network@',                              '--%s-network'                           % ('enable' if options.network                        else 'disable')],
+        ['@fetchpremirroronlyoption@',             '--%s-fetch-premirror-only'              % ('enable' if options.fetchpremirroronly             else 'disable')],
+        ['@generatemirrortarballsoption@',         '--%s-generate-mirror-tarballs'          % ('enable' if options.generatemirrortarballs         else 'disable')],
+        ['@privateinternalcomponentmirroroption@', '--%s-private-internal-component-mirror' % ('enable' if options.privateinternalcomponentmirror else 'disable')],
+        ['@machine@', options.MACHINE[0]],
         ['@machines@', ' '.join(options.MACHINE)],
         ['@machines_only@', ' '.join([i.split(':')[0] for i in options.MACHINE])],
-        ['@distro@', '{}'.format(readdistro(srcdir))],
+        ['@distro@', readdistro(srcdir)],
         ['@prog@', progname],
         ['@srcdir@', srcdir],
         ['@abs_srcdir@', abs_srcdir],
     ]
 
     # if icecc is not installed, or version does not match requirements, then disabling icecc is the correct action.
-    icestate, iceccinstallmsg = _icecc_installed()
+    icestate = _icecc_installed()
 
     icecc_replacements = [
         ['@icecc_disable_enable@',           '1' if not icestate or options.disable_icecc else ''],
@@ -902,9 +876,6 @@ if __name__ == '__main__':
     else:
         downloadprojects(srcdir,True)
 
-    if iceccinstallmsg:
-        print ("\n%s\n" % iceccinstallmsg)
-
     parseCollections(srcdir)
 
     for machine in options.MACHINE:
@@ -915,4 +886,4 @@ if __name__ == '__main__':
         logger.info('MCF-%s: Done configuring build directory BUILD-%s' % (__version__, machine))
 
     echo_check_call('/bin/chmod a+x mcf.status', options.verbose)
-    logger.info('Done.\n')
+    logger.info('Done')
