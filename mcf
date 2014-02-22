@@ -32,6 +32,7 @@ import glob
 logger = logging.getLogger(__name__)
 
 submodules = {}
+CLEAN = False
 
 def echo_check_call(todo, verbosity, cwd=None):
     if verbosity:
@@ -47,6 +48,11 @@ def echo_check_call(todo, verbosity, cwd=None):
 def echo_cmd(cmd):
     logger.debug(cmd)
     return cmd
+
+def enable_clean():
+    print('Warning: running in clean non-interactive mode, all possible local changes and untracked files will be removed')
+    global CLEAN
+    CLEAN = True
 
 def enable_debug():
     logger = logging.getLogger(__name__)
@@ -105,6 +111,7 @@ def getopts():
                        help='work verbosely')
 
     general.add_argument('-x', '--trace', dest='trace', action='store_true', default=False, help='trace')
+    general.add_argument('-c', '--clean', dest='clean', action='store_true', default=False, help='clean checkout - WARN: removes all local changes')
 
     general.add_argument(mcfcommand_option, dest=mcfcommand_dest, choices=mcfcommand_choices, default=mcfcommand_default,
                               help='command to mcf; if update is given, none of the remaining options nor MACHINE can be specified (default: %(default)s)')
@@ -490,17 +497,31 @@ def reposanitycheck(layer):
     res = False
     msgs = 0
 
-    print('Checking for local changes in [{0}]'.format(layer))
-    if subprocess.check_output(shlex.split(echo_cmd("git status --porcelain --u=no -s"))):
-        print('Warning: found local uncommited changes in [{0}]'.format(layer))
-        msgs += 1
-        subprocess.check_output(shlex.split(echo_cmd("git stash")))
-        res = True
+    if CLEAN:
+        if subprocess.check_output(shlex.split(echo_cmd("git status --porcelain -s"))):
+            print('Warning: Removing all local changes and untracked files in [{0}]'.format(layer))
+            # abort rebase if git pull --rebase from update_layers got stuck on some local commit
+            try:
+                subprocess.check_output(shlex.split(echo_cmd("git rebase --abort")))
+            except subprocess.CalledProcessError:
+                # we can ignore this one
+                pass
+  
+            subprocess.check_output(shlex.split(echo_cmd("git stash clear")))
+            subprocess.check_output(shlex.split(echo_cmd("git clean -fdx")))
+            subprocess.check_output(shlex.split(echo_cmd("git reset --hard")))
+    else:
+        print('Checking for local changes in [{0}]'.format(layer))
+        if subprocess.check_output(shlex.split(echo_cmd("git status --porcelain --u=no -s"))):
+            print('Warning: found local uncommited changes in [{0}]'.format(layer))
+            msgs += 1
+            subprocess.check_output(shlex.split(echo_cmd("git stash")))
+            res = True
 
-    if subprocess.check_output(echo_cmd("git status --porcelain -s | grep -v '^?? MCF-PATCHES_' || true"), shell=True):
-        print('Warning: found local untracked changes in [{0}]'.format(layer))
-        msgs += 4
-        res = True
+        if subprocess.check_output(echo_cmd("git status --porcelain -s | grep -v '^?? MCF-PATCHES_' || true"), shell=True):
+            print('Warning: found local untracked changes in [{0}]'.format(layer))
+            msgs += 4
+            res = True
 
     logger.debug("reposanitycheck({0}) dir {1}, branchinfo {2}, branchinfonew {3}".format(layer, DIRNAME[layer], BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer]))
     newbranch = BRANCHINFONEW[layer]
@@ -627,9 +648,13 @@ def updaterepo(layer):
                 if subprocess.call(shlex.split(echo_cmd(cmd))):
                     raise Exception('Can not update to commit id [{}]'.format(newcommitid))
         else:
-            # current branch always tracks a remote one
-            if subprocess.call(shlex.split(echo_cmd('git pull origin'))):
-                raise Exception('Error: git pull origin')
+            if CLEAN:
+                if subprocess.call(shlex.split(echo_cmd('git reset --hard origin/%s' % newbranch))):
+                    raise Exception('Error: git reset --hard origin/%s' % newbranch)
+            else:
+                # current branch always tracks a remote one
+                if subprocess.call(shlex.split(echo_cmd('git pull origin'))):
+                    raise Exception('Error: git pull origin')
         print('Done.\n')
     else:
         print(('[{}] is up-to-date.'.format(layer)))
@@ -668,8 +693,9 @@ def recover_current_mcf_state(srcdir, configure, origoptions):
 
     sys.argv = commandlinereconstructed
     options = getopts()
-    # always use trace/verbose flags from origoptions not mcf.status
+    # always use trace/clean/verbose flags from origoptions not mcf.status
     options.trace = origoptions.trace
+    options.clean = origoptions.clean
     options.verbose = origoptions.verbose
     return options
 
@@ -701,6 +727,8 @@ if __name__ == '__main__':
     # read status template, process, write
     if options.trace:
         enable_debug()
+    if options.clean:
+        enable_clean()
 
     files = [[os.path.join(srcdir, 'build-templates', 'mcf-status.in'), 'mcf.status'],
              [os.path.join(srcdir, 'Makefile.in'), 'Makefile']]
