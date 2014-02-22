@@ -84,12 +84,8 @@ def getopts():
     # Just parse the --command argument here, so that we can select a parser
     mcfcommand_parser = argparse.ArgumentParser(add_help=False)
     mcfcommand_parser.add_argument(mcfcommand_option, dest=mcfcommand_dest, choices=mcfcommand_choices, default=mcfcommand_default)
-    mcfcommand_parser.add_argument('-x', '--trace', action='store_true', help='trace')
     mcfcommand_parser_result = mcfcommand_parser.parse_known_args()
     mcfcommand = mcfcommand_parser_result[0].mcfcommand
-    trace = mcfcommand_parser_result[0].trace
-    if trace:
-        enable_debug()
 
     # Put --command back in (as the first option) so that the main parser sees everything
     arglist = [mcfcommand_option, mcfcommand ] + mcfcommand_parser_result[1]
@@ -108,7 +104,7 @@ def getopts():
                        action='store_true', default=False,
                        help='work verbosely')
 
-    general.add_argument('-x', '--trace', action='store_true', help='trace')
+    general.add_argument('-x', '--trace', dest='trace', action='store_true', default=False, help='trace')
 
     general.add_argument(mcfcommand_option, dest=mcfcommand_dest, choices=mcfcommand_choices, default=mcfcommand_default,
                               help='command to mcf; if update is given, none of the remaining options nor MACHINE can be specified (default: %(default)s)')
@@ -641,7 +637,7 @@ def updaterepo(layer):
     newdir = os.chdir(olddir)
     os.getcwd()
 
-def recover_current_mcf_state(srcdir, configure):
+def recover_current_mcf_state(srcdir, configure, origoptions):
     mcfstatusfile = os.path.join(srcdir, "mcf.status")
     if not os.path.exists(mcfstatusfile):
         raise Exception("mcf.status does not exist.")
@@ -671,7 +667,11 @@ def recover_current_mcf_state(srcdir, configure):
                     commandlinereconstructed.append(lline)
 
     sys.argv = commandlinereconstructed
-    return getopts()
+    options = getopts()
+    # always use trace/verbose flags from origoptions not mcf.status
+    options.trace = origoptions.trace
+    options.verbose = origoptions.verbose
+    return options
 
 
 if __name__ == '__main__':
@@ -696,7 +696,7 @@ if __name__ == '__main__':
     if options.mcfcommand == 'update':
          # recover current mcf state
         updatestate = True
-        options = recover_current_mcf_state(srcdir, configure)
+        options = recover_current_mcf_state(srcdir, configure, options)
 
     # read status template, process, write
     if options.trace:
