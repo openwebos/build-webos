@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.6"
+SCRIPT_VERSION="3.3.10"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -156,7 +156,7 @@ function generate_bom {
   grep '^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$' package-depends.dot |\
     grep -v '^"\([^"]*\)" \[label="\([^ (]*([^ ]*)\) :\([^\\]*\)\\n\([^"]*\)"\]$' |\
       sed 's/^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$/\1;\2;\3;\4/g' |\
-        sed "s#${BUILD_TOPDIR}/BUILD/.././##g" |\
+        sed "s#${BUILD_TOPDIR}/BUILD-${MACHINE}/.././##g" |\
           sort > ${ARTIFACTS}/${MACHINE}/${I}/${FILENAME}
 }
 
@@ -360,7 +360,7 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
     cd BUILD-${M};
     . bitbake.rc
     for I in ${IMAGES} ${TARGETS}; do
-      generate_bom "${MACHINE}" "${I}" "${BBFLAGS}" "bom${BOM_FILE_SUFFIX}.txt"
+      generate_bom "${M}" "${I}" "${BBFLAGS}" "bom${BOM_FILE_SUFFIX}.txt"
     done
     cd ..
   done
@@ -412,10 +412,10 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
       cd BUILD-${M};
       . bitbake.rc
       for I in ${IMAGES} ${TARGETS}; do
-        generate_bom "${MACHINE}" "${I}" "${BBFLAGS}" "bom-after.txt"
-        diff ${ARTIFACTS}/${MACHINE}/${I}/bom-before.txt \
-             ${ARTIFACTS}/${MACHINE}/${I}/bom-after.txt \
-           > ${ARTIFACTS}/${MACHINE}/${I}/bom-diff.txt
+        generate_bom "${M}" "${I}" "${BBFLAGS}" "bom-after.txt"
+        diff ${ARTIFACTS}/${M}/${I}/bom-before.txt \
+             ${ARTIFACTS}/${M}/${I}/bom-after.txt \
+           > ${ARTIFACTS}/${M}/${I}/bom-diff.txt
       done
       cd ..
     done
@@ -514,8 +514,16 @@ if [ -n "${MACHINES}" ]; then
           mv deploy/images/${I}-${M}-*.vmdk ${ARTIFACTS}/${M}/${I}/ || true
         fi
         cp ../meta-webos/scripts/webosvbox ${ARTIFACTS}/${M} || true
+      elif ls deploy/images/${I}-${M}-*.tar.gz >/dev/null 2>/dev/null \
+        || ls deploy/images/${I}-${M}-*.epk    >/dev/null 2>/dev/null; then
+        if ls deploy/images/${I}-${M}-*.tar.gz >/dev/null 2>/dev/null; then
+          mv  deploy/images/${I}-${M}-*.tar.gz ${ARTIFACTS}/${M}/${I}/
+        fi
+        if ls deploy/images/${I}-${M}-*.epk >/dev/null 2>/dev/null; then
+          mv  deploy/images/${I}-${M}-*.epk ${ARTIFACTS}/${M}/${I}/
+        fi
       else
-        mv deploy/images/${I}-${M}-*.tar.gz deploy/images/${I}-${M}-*.epk ${ARTIFACTS}/${M}/${I}/ || true
+        echo "WARN: No recognized IMAGE_FSTYPES to copy to build artifacts"
       fi
       FOUND_IMAGE="false"
       # Add .md5 files for image files, if they are missing or older than image file
