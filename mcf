@@ -25,7 +25,7 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.2"
+__version__ = "4.0.3"
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,6 @@ URLS = {}
 PRIORITYORDER = []
 COLLECTION_NAME = {}
 COLLECTION_PATH = {}
-DIRNAME = {}
 SUMMARYINFO = {}
 BRANCHINFONEW = {}
 BRANCHINFOCURRENT = {}
@@ -270,14 +269,14 @@ def _icecc_installed():
         logger.warn('WARNING: ICECC package installation check failed, disabling build from using ICECC.')
         return False
 
-def location_to_dirname(layer, location):
+def location_to_dirname(location):
     str1 = location.split('/')
-    DIRNAME[layer] = os.path.splitext(str1[len(str1)-1])[0]
+    return os.path.splitext(str1[len(str1)-1])[0]
 
 def readlayers(path):
     sys.path.insert(0,path)
     if not os.path.isfile(os.path.join(path,'weboslayers.py')):
-        raise Exception("Error:" 'Configuration file {} does not exist!'.format(os.path.join(path,'weboslayers.py')))
+        raise Exception("Error:" 'Configuration file %s does not exist!' % os.path.join(path,'weboslayers.py'))
 
     from weboslayers import webos_layers
 
@@ -289,10 +288,10 @@ def readlayers(path):
         SUBMISSIONS[p[0]] = p[3]
         parsesubmissions(p[0])
         LOCATIONS[p[0]] = p[4]
-        if URLS[p[0]]:
-            location_to_dirname(p[0], URLS[p[0]])
-        if LOCATIONS[p[0]]:
-            location_to_dirname(p[0], LOCATIONS[p[0]])
+        if not URLS[p[0]] and not LOCATIONS[p[0]]:
+            raise Exception("Error:" 'Layer %s does not have either URL or alternative working-dir defined in weboslayers.py)')
+        if not LOCATIONS[p[0]]:
+            LOCATIONS[p[0]] = location_to_dirname(URLS[p[0]])
 
     PRIORITYORDER.sort()
     PRIORITYORDER.reverse()
@@ -331,11 +330,12 @@ def readdistro(path):
 
 def downloadrepo(layer,update=False):
     if not update:
-        cmd = 'git clone %s' % URLS[layer]
+        cmd = 'git clone %s %s' % (URLS[layer], LOCATIONS[layer])
         echo_check_call(cmd)
 
         olddir = os.getcwd()
-        os.chdir(DIRNAME[layer])
+        os.chdir(LOCATIONS[layer])
+
         newbranch = BRANCHINFONEW[layer]
 
         if newbranch:
@@ -398,36 +398,33 @@ def downloadrepo(layer,update=False):
     else:
         updaterepo(layer)
 
-def parselayerconffiles (layername, root):
-    f = open(os.path.join(os.path.abspath(root), "conf", "layer.conf"), 'r')
-    lines = f.readlines()
-    f.close
+def parselayerconffile(layer, layerconffile):
+    with open(layerconffile, 'r') as f:
+        lines = f.readlines()
     for line in lines:
         if re.search( 'BBFILE_COLLECTIONS.*=' , line):
             (dummy, collectionname) = line.rsplit('=')
             collectionname = collectionname.strip()
             collectionname = collectionname.strip("\"")
-            COLLECTION_NAME[layername] = collectionname
+            COLLECTION_NAME[layer] = collectionname
+            logger.debug("parselayerconffile(%s,%s) -> %s" % (layer, layerconffile, COLLECTION_NAME[layer]))
 
-def traversedir (root):
+def traversedir(layer, root):
     for path, dirs, files in os.walk(root):
-        for filename in files:
-            if filename == 'layer.conf':
-                ( collectionpath, dummy) = os.path.split(path)
-                ( dymmy, layername) = os.path.split(collectionpath)
-                parselayerconffiles(layername, collectionpath)
-                COLLECTION_PATH[layername] = collectionpath
-                break
+        if os.path.basename(os.path.dirname(path)) == layer:
+            for filename in files:
+                if filename == 'layer.conf':
+                    COLLECTION_PATH[layer] = os.path.relpath(os.path.dirname(path), os.path.dirname(root))
+                    logger.debug("traversedir(%s,%s) -> %s" % (layer, root, COLLECTION_PATH[layer]))
+
+                    layerconffile = os.path.join(path, filename)
+                    parselayerconffile(layer, layerconffile)
+                    break
 
 def parse_collections(srcdir):
     for layer in WEBOSLAYERS:
-        if URLS[layer]:
-            pathstr = DIRNAME[layer]
-        if LOCATIONS[layer]:
-            pathstr = os.path.abspath( LOCATIONS[layer] )
-
-        if os.path.exists(pathstr):
-            traversedir(pathstr)
+        if os.path.exists(LOCATIONS[layer]):
+            traversedir(layer, LOCATIONS[layer])
         else:
             raise Exception("Error:", 'directory does not exist %s !' % pathstr)
 
@@ -445,11 +442,10 @@ def write_bblayers_conf(sourcedir, machine):
                     leftside = layer
                     leftside = leftside.replace('-','_')
                     leftside = leftside.upper()
-                    if not URLS[layer]:
-                        str = "%s_LAYER ?= \"%s\" " % (leftside, LOCATIONS[layer])
+                    if os.path.isabs(LOCATIONS[layer]):
+                        str = "%s_LAYER ?= \"%s/%s\"" % (leftside, LOCATIONS[layer], COLLECTION_PATH[layer])
                     else:
                         str = "%s_LAYER ?= \"${PALMDIR}/%s\"" % (leftside, COLLECTION_PATH[layer])
-
                     f.write(str)
                     f.write('\n')
                     break
@@ -481,7 +477,7 @@ def update_layers(sourcedir):
     logger.info('MCF-%s: Updating build directory' % __version__)
     # all layers must exists before update
     for layer in WEBOSLAYERS:
-        if not os.path.exists(os.path.abspath( DIRNAME[layer] ) ):
+        if not os.path.exists(os.path.abspath( LOCATIONS[layer] ) ):
             downloadrepo(layer)
 
     # run sanity check on repo
@@ -489,8 +485,8 @@ def update_layers(sourcedir):
     update_location = list()
     updated_layers = list()
     for layer in WEBOSLAYERS:
-        if DIRNAME[layer] not in update_location:
-            update_location.append(DIRNAME[layer])
+        if LOCATIONS[layer] not in update_location:
+            update_location.append(LOCATIONS[layer])
             updated_layers.append(layer)
             if reposanitycheck(layer) != 0:
                 layers_sanity.append(layer)
@@ -523,7 +519,7 @@ def printupdatesummary ():
 
 def reposanitycheck(layer):
     olddir = os.getcwd()
-    os.chdir(DIRNAME[layer])
+    os.chdir(LOCATIONS[layer])
 
     # Sync with remote repo
     echo_check_call('git remote update')
@@ -578,7 +574,7 @@ def reposanitycheck(layer):
     # there is extra newline at the end
     urlcurrent = urlcurrent.strip()
 
-    logger.debug("reposanitycheck(%s) dir %s, branchinfo %s, branchinfonew %s, url %s, urlnew %s" % (layer, DIRNAME[layer], BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer], URLS[layer], urlcurrent))
+    logger.debug("reposanitycheck(%s) dir %s, branchinfo %s, branchinfonew %s, url %s, urlnew %s" % (layer, LOCATIONS[layer], BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer], URLS[layer], urlcurrent))
 
     if urlcurrent != URLS[layer]:
         logger.warn("Changing url for remote '%s' from '%s' to '%s'" % (REMOTE, urlcurrent, URLS[layer]))
@@ -620,7 +616,7 @@ def reposanitycheck(layer):
 
             head = echo_check_call("git rev-parse --abbrev-ref HEAD").rstrip()
             patchdir = './MCF-PATCHES_%s-%s' % (head.replace('/','_'), timestamp)
-            REPOPATCHDIR[layer] = "%s/%s" % (DIRNAME[layer], patchdir)
+            REPOPATCHDIR[layer] = "%s/%s" % (LOCATIONS[layer], patchdir)
             cmd ='git format-patch %s..%s -o %s' % (remotebranch,newbranch,patchdir)
             rawpatches = echo_check_call(cmd)
             patches = rawpatches.splitlines()
@@ -666,7 +662,7 @@ def contains_ref(tag):
 
 def updaterepo(layer):
     olddir = os.getcwd()
-    os.chdir(DIRNAME[layer])
+    os.chdir(LOCATIONS[layer])
 
     COMMITIDSCURRENT[layer] = echo_check_call("git  log --pretty=format:%h -1")
 
@@ -675,7 +671,7 @@ def updaterepo(layer):
     newbranch = BRANCHINFONEW[layer]
     currentbranch = BRANCHINFOCURRENT[layer]
 
-    logger.debug("updaterepo(%s) dir %s, id %s, newid %s, branch %s, newbranch %s" % (layer, DIRNAME[layer], currentcommitid, newcommitid, currentbranch, newbranch))
+    logger.debug("updaterepo(%s) dir %s, id %s, newid %s, branch %s, newbranch %s" % (layer, LOCATIONS[layer], currentcommitid, newcommitid, currentbranch, newbranch))
 
     if newcommitid != currentcommitid:
         logger.info('Updating [%s]' % layer)
