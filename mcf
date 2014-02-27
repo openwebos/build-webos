@@ -25,7 +25,7 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.5"
+__version__ = "4.0.6"
 
 logger = logging.getLogger(__name__)
 
@@ -781,6 +781,29 @@ def recover_current_mcf_state(srcdir, origoptions):
     options.silent = origoptions.silent
     return options
 
+def checkmirror(name, url):
+    if url.startswith('file://'):
+        pathstr = url[7:]
+        if not os.path.isdir(pathstr):
+            logger.warn("%s parameter '%s' points to non-existent directory" % (name, url))
+        elif not os.listdir(pathstr):
+            logger.warn("%s parameter '%s' points to empty directory, did you forgot to mount it?" % (name, url))
+
+def sanitycheck(options):
+    try:
+        mirror = echo_check_call('git config -l | grep "^url\..*insteadof=github.com/"')
+    except subprocess.CalledProcessError:
+        # git config returns 1 when the option isn't set
+        mirror = ''
+        pass
+    if not mirror:
+        logger.warn('No mirror for github.com was detected, please define mirrors in ~/.gitconfig if some are available')
+    if options.sstatemirror:
+        for m in options.sstatemirror:
+            checkmirror('sstatemirror', m)
+    if options.premirror:
+        checkmirror('premirror', options.premirror)
+
 def configure_build(srcdir, options):
     files = [
         [os.path.join(srcdir, 'Makefile.in'),                             'Makefile',           False],
@@ -881,4 +904,5 @@ if __name__ == '__main__':
 
     configure_build(srcdir, options)
 
+    sanitycheck(options)
     logger.info('Done.')
