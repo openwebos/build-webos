@@ -25,7 +25,7 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.1"
+__version__ = "4.0.2"
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +90,8 @@ def process_file(f, replacements, machine):
 def getopts():
     mcfcommand_option = '--command'
     mcfcommand_dest = 'mcfcommand'
-    mcfcommand_choices = ['configure', 'update']
-    mcfcommand_default = 'configure'
+    mcfcommand_choices = ['configure', 'update', 'all']
+    mcfcommand_default = 'all'
 
     # Just parse the --command argument here, so that we can select a parser
     mcfcommand_parser = argparse.ArgumentParser(add_help=False)
@@ -117,7 +117,7 @@ def getopts():
     general.add_argument(mcfcommand_option, dest=mcfcommand_dest, choices=mcfcommand_choices, default=mcfcommand_default,
                               help='command to mcf; if update is given, none of the remaining options nor MACHINE can be specified (default: %(default)s)')
 
-    if mcfcommand == 'configure':
+    if mcfcommand in ('configure','all'):
         variations = parser.add_argument_group('Build Instructions')
 
         variations.add_argument('-p', '--enable-parallel-make', dest='parallel_make', type=int, default=0,
@@ -215,7 +215,7 @@ def getopts():
         parser.add_argument('MACHINE', nargs='+')
 
     options = parser.parse_args(arglist)
-    if mcfcommand == 'configure' and options.sstatemirror:
+    if mcfcommand in ('configure','all') and options.sstatemirror:
         # /PATH is automatically added when generating SSTATE_MIRRORS value
         # verify and show error
         SSTATE_MIRRORS = "SSTATE_MIRRORS ?= \" \\\n"
@@ -329,20 +329,6 @@ def readdistro(path):
     from weboslayers import Distribution
     return Distribution
 
-def downloadprojects(srcdir,verbosity):
-    for layer in WEBOSLAYERS:
-        if os.path.exists(os.path.abspath( DIRNAME[layer] ) ):
-            logger.info("Git repo %s exists! Skipping download." % layer)
-            continue
-        if URLS[layer] and LOCATIONS[layer]:
-            raise Exception("Error:", 'Both url and location are defined for %s layer!' % layer)
-        if not URLS[layer]:
-            if not LOCATIONS[layer]:
-                raise Exception("Error:", 'Must define %s git repo or location!' % layer)
-            continue
-
-        downloadrepo(layer)
-
 def downloadrepo(layer,update=False):
     if not update:
         cmd = 'git clone %s' % URLS[layer]
@@ -433,7 +419,7 @@ def traversedir (root):
                 COLLECTION_PATH[layername] = collectionpath
                 break
 
-def parseCollections (srcdir):
+def parse_collections(srcdir):
     for layer in WEBOSLAYERS:
         if URLS[layer]:
             pathstr = DIRNAME[layer]
@@ -445,7 +431,7 @@ def parseCollections (srcdir):
         else:
             raise Exception("Error:", 'directory does not exist %s !' % pathstr)
 
-def writebblayersconf(sourcedir, machine):
+def write_bblayers_conf(sourcedir, machine):
     f = open(os.path.join(sourcedir, "BUILD-{0}".format(machine), "conf", "bblayers.conf"), 'a')
     f.write('\n')
     processed_layers = list()
@@ -491,7 +477,7 @@ def writebblayersconf(sourcedir, machine):
         f.write('\n')
     f.close
 
-def updatelayers (sourcedir):
+def update_layers(sourcedir):
     logger.info('MCF-%s: Updating build directory' % __version__)
     # all layers must exists before update
     for layer in WEBOSLAYERS:
@@ -516,6 +502,7 @@ def updatelayers (sourcedir):
     for layer in WEBOSLAYERS:
         if layer in updated_layers:
             downloadrepo(layer,True)
+    printupdatesummary()
 
 def printupdatesummary ():
     logger.info('Repo Update Summary')
@@ -555,7 +542,7 @@ def reposanitycheck(layer):
             except subprocess.CalledProcessError:
                 # we can ignore this one
                 pass
-  
+
             echo_check_call("git stash clear")
             echo_check_call("git clean -fdx")
             echo_check_call("git reset --hard")
@@ -754,26 +741,30 @@ def recover_current_mcf_state(srcdir, origoptions):
     commandlinereconstructed = list()
     commandlinereconstructed.append('ignored-argv-0')
     start = False
-    for line in open(mcfstatusfile,'r'):
-        line = line.strip()
-        if not start:
-            start = line.startswith("exec")
-            continue
+    with open(mcfstatusfile, 'r') as f:
+        for line in f.readlines():
+            line = line.strip()
+            if not start:
+                start = line.startswith("exec")
+                continue
 
-        if start:
-            if line.startswith('--'):
-                line = line.rstrip('\\')
-                line = line.strip(' ')
-                line = line.replace('\"','')
-                line = line.replace('\'','')
-                commandlinereconstructed.append(line)
-            else:
-                lines = line.rstrip('\\')
-                lines = lines.lstrip()
-                lines = lines.rstrip()
-                lines = lines.split()
-                for lline in lines:
-                    commandlinereconstructed.append(lline)
+            if start:
+                if line.startswith('--command'):
+                    # skip --command configure
+                    continue
+                elif line.startswith('--'):
+                    line = line.rstrip('\\')
+                    line = line.strip(' ')
+                    line = line.replace('\"','')
+                    line = line.replace('\'','')
+                    commandlinereconstructed.append(line)
+                else:
+                    lines = line.rstrip('\\')
+                    lines = lines.lstrip()
+                    lines = lines.rstrip()
+                    lines = lines.split()
+                    for lline in lines:
+                        commandlinereconstructed.append(lline)
 
     sys.argv = commandlinereconstructed
     options = getopts()
@@ -783,31 +774,7 @@ def recover_current_mcf_state(srcdir, origoptions):
     options.silent = origoptions.silent
     return options
 
-
-if __name__ == '__main__':
-    # NB. The exec done by mcf.status causes argv[0] to be an absolute pathname
-    progname = sys.argv[0]
-
-    # Use the same timestamp for everything created by this invocation of mcf
-    timestamp = strftime("%Y%m%d%H%M%S", gmtime())
-
-    updatestate = False
-    options = getopts()
-
-    # Allow ../mcf to work.
-    srcdir = os.path.dirname(progname)
-    abs_srcdir = os.path.abspath(srcdir)
-
-    if options.mcfcommand == 'update':
-         # recover current mcf state
-        updatestate = True
-        options = recover_current_mcf_state(srcdir, options)
-
-    set_verbosity(options)
-
-    if options.clean:
-        enable_clean()
-
+def configure_build(srcdir, options):
     files = [
         [os.path.join(srcdir, 'Makefile.in'),                             'Makefile',           False],
         [os.path.join(srcdir, 'build-templates', 'mcf-status.in'),        'mcf.status',         False],
@@ -869,21 +836,42 @@ if __name__ == '__main__':
 
     replacements =  replacements + icecc_replacements
 
-    readlayers(srcdir)
-    if updatestate:
-        updatelayers(srcdir)
-        printupdatesummary()
-    else:
-        downloadprojects(srcdir,True)
-
-    parseCollections(srcdir)
-
+    parse_collections(srcdir)
     for machine in options.MACHINE:
         logger.info('MCF-%s: Configuring build directory BUILD-%s' % (__version__, machine))
         for f in files:
             process_file(f, replacements, machine)
-        writebblayersconf(srcdir, machine)
+        write_bblayers_conf(srcdir, machine)
         logger.info('MCF-%s: Done configuring build directory BUILD-%s' % (__version__, machine))
 
     echo_check_call('/bin/chmod a+x mcf.status', options.verbose)
-    logger.info('Done')
+
+if __name__ == '__main__':
+    # NB. The exec done by mcf.status causes argv[0] to be an absolute pathname
+    progname = sys.argv[0]
+
+    # Use the same timestamp for everything created by this invocation of mcf
+    timestamp = strftime("%Y%m%d%H%M%S", gmtime())
+
+    options = getopts()
+
+    srcdir = os.path.dirname(progname)
+    abs_srcdir = os.path.abspath(srcdir)
+
+    if options.mcfcommand == 'update':
+         # recover current mcf state
+        options = recover_current_mcf_state(srcdir, options)
+
+    set_verbosity(options)
+
+    if options.clean:
+        enable_clean()
+
+    readlayers(srcdir)
+
+    if options.mcfcommand != 'configure':
+        update_layers(srcdir)
+
+    configure_build(srcdir, options)
+
+    logger.info('Done.')
