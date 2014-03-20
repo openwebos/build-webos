@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.19"
+SCRIPT_VERSION="3.3.20"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -197,7 +197,7 @@ fi
 # recognized, then the build is, by definition, unofficial.
 if [ -n "${JENKINS_URL}" ]; then
   # when we're running with JENKINS_URL set we assume that buildhistory repo is on gerrit server (needs refs/heads/ prefix)
-  BUILDHISTORY_BRANCH_PREFIX="refs/heads/"
+  [ -n "${BUILDHISTORY_BRANCH_PREFIX}" ] || BUILDHISTORY_BRANCH_PREFIX="refs/heads/"
   case "${JENKINS_URL}" in
     https://gecko.palm.com/jenkins/)
        site="svl"
@@ -462,8 +462,10 @@ if [ -d "buildhistory/.git" -a -n "${BUILDHISTORY_BRANCH}" ] ; then
   else
     echo "BUILDHISTORY_PUSH_REPO ?= \"origin master:${BUILDHISTORY_BRANCH_PREFIX}${BUILDHISTORY_BRANCH} 2>/dev/null\"" >> webos-local.conf
   fi
+  echo "INFO: buildhistory will be pushed to '${BUILDHISTORY_BRANCH_PREFIX}${BUILDHISTORY_BRANCH}'"
 else
   [ -f webos-local.conf ] && sed "/^BUILDHISTORY_PUSH_REPO.*/d" -i webos-local.conf
+  echo "INFO: buildhistory won't be pushed because buildhistory directory isn't git repo or BUILDHISTORY_BRANCH wasn't set"
 fi
 
 TIMESTAMP=`date +%s`
