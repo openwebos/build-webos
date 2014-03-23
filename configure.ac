@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-# Copyright (c) 2008-2013 LG Electronics, Inc.
+# Copyright (c) 2008-2014 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,6 +57,113 @@ case "$enable_bb_number_threads" in
 esac
 AC_SUBST([bb_number_threads], [$enable_bb_number_threads])
 AC_MSG_RESULT([$enable_bb_number_threads])
+
+# icecc
+AC_MSG_CHECKING([disable-icecc])
+AC_ARG_ENABLE([icecc], [AS_HELP_STRING([--disable-icecc],
+		     disable build from using icecc (default: "False"))],
+		     [case "$enableval" in
+yes) disable_icecc="" ;;
+no) disable_icecc="1" ;;
+esac],
+		     [disable_icecc=""])
+AC_SUBST([icecc_disable_enable], [$disable_icecc])
+AC_MSG_RESULT([$disable_icecc])
+
+AC_MSG_CHECKING([icecc-parallel-make])
+m4_define([webos_icecc_parallel_make], [16])
+AC_ARG_ENABLE([icecc-parallel-make], [AS_HELP_STRING([--enable-icecc-parallel-make=N],
+		     maximum number of threads for distribute make with icecc (default: "webos_icecc_parallel_make"))],
+		     [],
+		     [enable_icecc_parallel_make="webos_icecc_parallel_make"])
+case "$enable_icecc_parallel_make" in
+     no|yes) enable_icecc_parallel_make=16 ;;
+esac
+AC_SUBST([icecc_parallel_make], [$enable_icecc_parallel_make])
+AC_MSG_RESULT([$enable_icecc_parallel_make])
+
+AC_MSG_CHECKING([icecc-location])
+AC_ARG_ENABLE([icecc-location], [AS_HELP_STRING([--enable-icecc-location=LOCATION],
+		     where is the icecc tool location (default: None))],
+                     [if test -z "$enableval"; then
+                         enable_icecc_location=""
+                      else
+                         enable_icecc_location="ICECC_PATH ?= \"$enableval\""
+                      fi
+                     ],
+                     [ enable_icecc_location=""])
+AC_SUBST([alternative_icecc_installation], [$enable_icecc_location])
+AC_MSG_RESULT([$enable_icecc_location])
+
+AC_MSG_CHECKING([icecc-env-exec])
+AC_ARG_ENABLE([icecc-env-exec], [AS_HELP_STRING([--enable-icecc-env-exec=LOCATION],
+		     where is the icecc environment script location (default: None))],
+                     [if test -z "$enableval"; then
+                         enable_icecc_env_exec=""
+                      else
+                         enable_icecc_env_exec="ICECC_ENV_EXEC ?= \"$enableval\""
+                      fi
+                     ],
+                     [ enable_icecc_env_exec=""])
+AC_SUBST([icecc_environment_script], [$enable_icecc_env_exec])
+AC_MSG_RESULT([$enable_icecc_env_exec])
+
+AC_MSG_CHECKING([icecc-user-package-blacklist])
+AC_ARG_ENABLE([icecc-user-package-blacklist], [AS_HELP_STRING([--enable-icecc-user-package-blacklist=LIST],
+		     Space separated list of components/recipes to be excluded from building with icecc (default: None))],
+                     [if test -z "$enableval"; then
+                         enable_icecc_user_package_blacklist=""
+                      else
+                         enable_icecc_user_package_blacklist="ICECC_USER_PACKAGE_BL ?= \" \\"
+                         for pkgname in $enableval; do
+                             enable_icecc_user_package_blacklist="$enable_icecc_user_package_blacklist
+ $pkgname \\"
+                         done
+                         enable_icecc_user_package_blacklist="$enable_icecc_user_package_blacklist
+\""
+                      fi
+                     ],
+                     [ enable_icecc_user_package_blacklist="" ])
+AC_SUBST([icecc_user_package_blacklist], [$enable_icecc_user_package_blacklist])
+AC_MSG_RESULT([$enable_icecc_user_package_blacklist])
+
+AC_MSG_CHECKING([icecc-user-class-blacklist])
+AC_ARG_ENABLE([icecc-user-class-blacklist], [AS_HELP_STRING([--enable-icecc-user-class-blacklist=LIST],
+		     Space separated list of components/recipes class to be excluded from building with icecc (default: None))],
+                     [if test -z "$enableval"; then
+                         enable_icecc_user_class_blacklist=""
+                      else
+                         enable_icecc_user_class_blacklist="ICECC_USER_CLASS_BL ?= \" \\"
+                         for pkgname in $enableval; do
+                             enable_icecc_user_class_blacklist="$enable_icecc_user_class_blacklist
+ $pkgname \\"
+                         done
+                         enable_icecc_user_class_blacklist="$enable_icecc_user_class_blacklist
+\""
+                      fi
+                     ],
+                     [ enable_icecc_user_class_blacklist="" ])
+AC_SUBST([icecc_user_class_blacklist], [$enable_icecc_user_class_blacklist])
+AC_MSG_RESULT([$enable_icecc_user_class_blacklist])
+
+AC_MSG_CHECKING([icecc-user-package-whitelist])
+AC_ARG_ENABLE([icecc-user-package-whitelist], [AS_HELP_STRING([--enable-icecc-user-package-whitelist=LIST],
+		     Space separated list of components/recipes to force build with icecc (default: None))],
+                     [if test -z "$enableval"; then
+                         enable_icecc_user_package_whitelist=""
+                      else
+                         enable_icecc_user_package_whitelist="ICECC_USER_PACKAGE_WL ?= \" \\"
+                         for pkgname in $enableval; do
+                             enable_icecc_user_package_whitelist="$enable_icecc_user_package_whitelist
+ $pkgname \\"
+                         done
+                         enable_icecc_user_package_whitelist="$enable_icecc_user_package_whitelist
+\""
+                      fi
+                     ],
+                     [ enable_icecc_user_package_whitelist="" ])
+AC_SUBST([icecc_user_package_whitelist], [$enable_icecc_user_package_whitelist])
+AC_MSG_RESULT([$enable_icecc_user_package_whitelist])
 
 # premirror
 AC_MSG_CHECKING([premirror])

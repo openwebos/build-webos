@@ -5,7 +5,7 @@
 # mcf-status.in.
 
 ##
-# Copyright (c) 2008-2013 LG Electronics, Inc.
+# Copyright (c) 2008-2014 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,6 +27,13 @@ set -e
 exec @prog@ -v \
     --enable-bb-number-threads=@bb_number_threads@ \
     --enable-parallel-make=@parallel_make@ \
+    @icecc_disable_enable@ \
+    --enable-icecc-parallel-make=@icecc_parallel_make@ \
+    --enable-icecc-location=@alternative_icecc_installation@ \
+    --enable-icecc-user-package-blacklist=@icecc_user_package_blacklist@ \
+    --enable-icecc-user-class-blacklist=@icecc_user_class_blacklist@ \
+    --enable-icecc-user-package-whitelist=@icecc_user_package_whitelist@ \
+    --enable-icecc-env-exec=@icecc_environment_script@ \
     --premirror=@premirror@ \
     --sstatemirror=@sstatemirror@ \
     @buildhistory@ \

@@ -125,6 +125,35 @@ def getopts():
         variations.add_argument('-b', '--enable-bb-number-threads', dest='bb_number_threads', type=int, default=1,
                                 help='maximum number of bitbake tasks to spawn (default: 1)')
 
+        icecc = parser.add_argument_group('ICECC Configuration')
+
+        icecc.add_argument('--enable-icecc', dest='enable_icecc', action='store_true', default=True,
+                           help='enable build to use icecc (default: True)')
+
+        icecc.add_argument('--disable-icecc', dest='disable_icecc', action='store_true', default=False,
+                           help='disable build from using icecc (default: False)')
+
+        icecc.add_argument('--enable-icecc-parallel-make', dest='icecc_parallel_make', type=int, default=16,
+                           help='Number of parallel threads for icecc build (default: 16)')
+
+        icecc_advanced = parser.add_argument_group('ICECC Advanced Configuration')
+
+        icecc_advanced.add_argument('--enable-icecc-user-package-blacklist', dest='icecc_user_package_blacklist', action='append',
+                           help='Space separated list of components/recipes to be excluded from using icecc  (default: None)')
+
+        icecc_advanced.add_argument('--enable-icecc-user-class-blacklist', dest='icecc_user_class_blacklist', action='append',
+                           help='Space separated list of components/recipes class to be excluded from using icecc  (default: None)')
+
+        icecc_advanced.add_argument('--enable-icecc-user-package-whitelist', dest='icecc_user_package_whitelist', action='append',
+                           help='Space separated list of components/recipes to be forced to use icecc  (default: None)')
+
+        icecc_advanced.add_argument('--enable-icecc-location', dest='icecc_location', default='',
+                           help='location of icecc tool  (default: None)')
+
+        icecc_advanced.add_argument('--enable-icecc-env-exec', dest='icecc_env_exec', default='',
+                           help='location of icecc environment script  (default: None)')
+
+
         partitions = parser.add_argument_group('Source Identification')
 
         mirrors = parser.add_argument_group('Networking and Mirrors')
@@ -763,6 +792,22 @@ if __name__ == '__main__':
         ['@srcdir@', srcdir],
         ]
 
+    icecc_disable_str = '--enable-icecc'
+    if options.disable_icecc:
+        icecc_disable_str ='--disable-icecc'
+
+    icecc_replacements = [
+        ['@icecc_disable_enable@', '{}'.format(icecc_disable_str)],
+        ['@icecc_parallel_make@', '{}'.format(options.icecc_parallel_make)],
+        ['@alternative_icecc_installation@', '{}'.format(options.icecc_location)],
+        ['@icecc_user_package_blacklist@', '"{}"'.format(' '.join(options.icecc_user_package_blacklist) if options.icecc_user_package_blacklist else '')],
+        ['@icecc_user_class_blacklist@', '"{}"'.format(' '.join(options.icecc_user_class_blacklist) if options.icecc_user_class_blacklist else '')],
+        ['@icecc_user_package_whitelist@', '"{}"'.format(' '.join(options.icecc_user_package_whitelist) if options.icecc_user_package_whitelist else '')],
+        ['@icecc_environment_script@', '{}'.format(options.icecc_env_exec)],
+        ]
+
+    replacements =  replacements + icecc_replacements
+
     for i, j in files:
         process_file(i, j, replacements)
 
@@ -794,7 +839,14 @@ if __name__ == '__main__':
             @privateinternalcomponentmirror@ \
             @generatemirrortarballs@ \
             --build=ubuntu \
-            --host={})'.format(machine, machine)
+            {} \
+            --enable-icecc-parallel-make=@icecc_parallel_make@ \
+            --enable-icecc-location=@alternative_icecc_installation@ \
+            --enable-icecc-user-package-blacklist=@icecc_user_package_blacklist@ \
+            --enable-icecc-user-class-blacklist=@icecc_user_class_blacklist@ \
+            --enable-icecc-user-package-whitelist=@icecc_user_package_whitelist@ \
+            --enable-icecc-env-exec=@icecc_environment_script@ \
+            --host={})'.format(machine, icecc_disable_str, machine)
 
         for i, j in replacements:
             cmd = cmd.replace(i, j)

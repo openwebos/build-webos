@@ -578,6 +578,13 @@ no_network
 sstatemirror_assignment
 premirror_inherit
 premirror_assignment
+icecc_user_package_whitelist
+icecc_user_class_blacklist
+icecc_user_package_blacklist
+icecc_environment_script
+alternative_icecc_installation
+icecc_parallel_make
+icecc_disable_enable
 bb_number_threads
 parallel_make
 customization_feature
@@ -625,6 +632,13 @@ ac_user_opts='
 enable_option_checking
 enable_parallel_make
 enable_bb_number_threads
+enable_icecc
+enable_icecc_parallel_make
+enable_icecc_location
+enable_icecc_env_exec
+enable_icecc_user_package_blacklist
+enable_icecc_user_class_blacklist
+enable_icecc_user_package_whitelist
 enable_premirror
 enable_sstatemirror
 enable_network
@@ -1255,6 +1269,24 @@ Optional Features:
   --enable-bb-number-threads=N
                           maximum number of tasks for each submake of bitbake
                           to spawn (default: "1")
+  --disable-icecc         disable build from using icecc (default: "False")
+  --enable-icecc-parallel-make=N
+                          maximum number of threads for distribute make with
+                          icecc (default: "16")
+  --enable-icecc-location=LOCATION
+                          where is the icecc tool location (default: None)
+  --enable-icecc-env-exec=LOCATION
+                          where is the icecc environment script location
+                          (default: None)
+  --enable-icecc-user-package-blacklist=LIST
+                          Space separated list of components/recipes to be
+                          excluded from building with icecc (default: None)
+  --enable-icecc-user-class-blacklist=LIST
+                          Space separated list of components/recipes class to
+                          be excluded from building with icecc (default: None)
+  --enable-icecc-user-package-whitelist=LIST
+                          Space separated list of components/recipes to force
+                          build with icecc (default: None)
   --enable-premirror=PREMIRROR
                           set PREMIRROR (default: none, own-mirrors class will
                           not be used)
@@ -1766,6 +1798,155 @@ bb_number_threads=$enable_bb_number_threads
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_bb_number_threads" >&5
 $as_echo "$enable_bb_number_threads" >&6; }
+
+# icecc
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking disable-icecc" >&5
+$as_echo_n "checking disable-icecc... " >&6; }
+# Check whether --enable-icecc was given.
+if test "${enable_icecc+set}" = set; then :
+  enableval=$enable_icecc; case "$enableval" in
+yes) disable_icecc="" ;;
+no) disable_icecc="1" ;;
+esac
+else
+  disable_icecc=""
+fi
+
+icecc_disable_enable=$disable_icecc
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $disable_icecc" >&5
+$as_echo "$disable_icecc" >&6; }
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking icecc-parallel-make" >&5
+$as_echo_n "checking icecc-parallel-make... " >&6; }
+
+# Check whether --enable-icecc-parallel-make was given.
+if test "${enable_icecc_parallel_make+set}" = set; then :
+  enableval=$enable_icecc_parallel_make;
+else
+  enable_icecc_parallel_make="16"
+fi
+
+case "$enable_icecc_parallel_make" in
+     no|yes) enable_icecc_parallel_make=16 ;;
+esac
+icecc_parallel_make=$enable_icecc_parallel_make
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_icecc_parallel_make" >&5
+$as_echo "$enable_icecc_parallel_make" >&6; }
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking icecc-location" >&5
+$as_echo_n "checking icecc-location... " >&6; }
+# Check whether --enable-icecc-location was given.
+if test "${enable_icecc_location+set}" = set; then :
+  enableval=$enable_icecc_location; if test -z "$enableval"; then
+                         enable_icecc_location=""
+                      else
+                         enable_icecc_location="ICECC_PATH ?= \"$enableval\""
+                      fi
+
+else
+   enable_icecc_location=""
+fi
+
+alternative_icecc_installation=$enable_icecc_location
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_icecc_location" >&5
+$as_echo "$enable_icecc_location" >&6; }
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking icecc-env-exec" >&5
+$as_echo_n "checking icecc-env-exec... " >&6; }
+# Check whether --enable-icecc-env-exec was given.
+if test "${enable_icecc_env_exec+set}" = set; then :
+  enableval=$enable_icecc_env_exec; if test -z "$enableval"; then
+                         enable_icecc_env_exec=""
+                      else
+                         enable_icecc_env_exec="ICECC_ENV_EXEC ?= \"$enableval\""
+                      fi
+
+else
+   enable_icecc_env_exec=""
+fi
+
+icecc_environment_script=$enable_icecc_env_exec
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_icecc_env_exec" >&5
+$as_echo "$enable_icecc_env_exec" >&6; }
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking icecc-user-package-blacklist" >&5
+$as_echo_n "checking icecc-user-package-blacklist... " >&6; }
+# Check whether --enable-icecc-user-package-blacklist was given.
+if test "${enable_icecc_user_package_blacklist+set}" = set; then :
+  enableval=$enable_icecc_user_package_blacklist; if test -z "$enableval"; then
+                         enable_icecc_user_package_blacklist=""
+                      else
+                         enable_icecc_user_package_blacklist="ICECC_USER_PACKAGE_BL ?= \" \\"
+                         for pkgname in $enableval; do
+                             enable_icecc_user_package_blacklist="$enable_icecc_user_package_blacklist
+ $pkgname \\"
+                         done
+                         enable_icecc_user_package_blacklist="$enable_icecc_user_package_blacklist
+\""
+                      fi
+
+else
+   enable_icecc_user_package_blacklist=""
+fi
+
+icecc_user_package_blacklist=$enable_icecc_user_package_blacklist
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_icecc_user_package_blacklist" >&5
+$as_echo "$enable_icecc_user_package_blacklist" >&6; }
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking icecc-user-class-blacklist" >&5
+$as_echo_n "checking icecc-user-class-blacklist... " >&6; }
+# Check whether --enable-icecc-user-class-blacklist was given.
+if test "${enable_icecc_user_class_blacklist+set}" = set; then :
+  enableval=$enable_icecc_user_class_blacklist; if test -z "$enableval"; then
+                         enable_icecc_user_class_blacklist=""
+                      else
+                         enable_icecc_user_class_blacklist="ICECC_USER_CLASS_BL ?= \" \\"
+                         for pkgname in $enableval; do
+                             enable_icecc_user_class_blacklist="$enable_icecc_user_class_blacklist
+ $pkgname \\"
+                         done
+                         enable_icecc_user_class_blacklist="$enable_icecc_user_class_blacklist
+\""
+                      fi
+
+else
+   enable_icecc_user_class_blacklist=""
+fi
+
+icecc_user_class_blacklist=$enable_icecc_user_class_blacklist
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_icecc_user_class_blacklist" >&5
+$as_echo "$enable_icecc_user_class_blacklist" >&6; }
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking icecc-user-package-whitelist" >&5
+$as_echo_n "checking icecc-user-package-whitelist... " >&6; }
+# Check whether --enable-icecc-user-package-whitelist was given.
+if test "${enable_icecc_user_package_whitelist+set}" = set; then :
+  enableval=$enable_icecc_user_package_whitelist; if test -z "$enableval"; then
+                         enable_icecc_user_package_whitelist=""
+                      else
+                         enable_icecc_user_package_whitelist="ICECC_USER_PACKAGE_WL ?= \" \\"
+                         for pkgname in $enableval; do
+                             enable_icecc_user_package_whitelist="$enable_icecc_user_package_whitelist
+ $pkgname \\"
+                         done
+                         enable_icecc_user_package_whitelist="$enable_icecc_user_package_whitelist
+\""
+                      fi
+
+else
+   enable_icecc_user_package_whitelist=""
+fi
+
+icecc_user_package_whitelist=$enable_icecc_user_package_whitelist
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_icecc_user_package_whitelist" >&5
+$as_echo "$enable_icecc_user_package_whitelist" >&6; }
 
 # premirror
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking premirror" >&5
