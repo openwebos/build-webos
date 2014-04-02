@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 submodules = {}
 CLEAN = False
+REMOTE = "origin"
 
 def echo_check_call(todo, verbosity, cwd=None):
     if verbosity:
@@ -45,6 +46,17 @@ def echo_check_call(todo, verbosity, cwd=None):
                                  stderr=sys.stderr,
                                  shell=True,
                                  cwd=cwd)
+
+def echo_check_call2(todo, verbosity=False):
+    if verbosity:
+        cmd = 'set -x; ' + todo
+    else:
+        cmd = todo
+
+    logger.debug(cmd)
+
+    return str(subprocess.check_output(cmd, shell=True), encoding='utf-8', errors='strict')
+
 def echo_cmd(cmd):
     logger.debug(cmd)
     return cmd
@@ -331,7 +343,7 @@ def downloadrepo(layer,update=False):
                 refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch -r"))), encoding='utf-8', errors='strict')
                 refbranch = refbranchlist.splitlines()
                 for ibranch in refbranch:
-                    if ibranch == "  origin/%s" % newbranch:
+                    if ibranch == "  %s/%s" % (REMOTE, newbranch):
                         foundbranch = True
                         print( " found %s " % ibranch )
                         cmd ='git checkout -B {0} {1}'.format(newbranch,ibranch)
@@ -345,15 +357,15 @@ def downloadrepo(layer,update=False):
             if newcommitid.startswith('refs/changes/'):
                 if newbranch and newbranch != currentbranch:
                     # older git doesn't allow to update reference on currently checked out branch
-                    cmd ='git fetch origin {0} && git checkout -B {1} FETCH_HEAD'.format(newcommitid,newbranch)
+                    cmd ='git fetch {0} {1} && git checkout -B {2} FETCH_HEAD'.format(REMOTE, newcommitid, newbranch)
                 elif newbranch:
                     # we're already on requested branch
-                    cmd ='git fetch origin {0} && git reset --hard FETCH_HEAD'.format(newcommitid)
+                    cmd ='git fetch {0} {1} && git reset --hard FETCH_HEAD'.format(REMOTE, newcommitid)
                 else:
                     # we don't have any branch preference use detached
-                    cmd ='git fetch origin {0} && git checkout FETCH_HEAD'.format(newcommitid)
+                    cmd ='git fetch {0} {1} && git checkout FETCH_HEAD'.format(REMOTE, newcommitid)
                 if subprocess.call(echo_cmd(cmd), shell=True):
-                    raise Exception('Can not checkout reference [{}]'.format(newcommitid))
+                    raise Exception('Can not checkout reference [{}]'.format(REMOTE, newcommitid))
             else:
                 if newbranch and newbranch != currentbranch:
                     # older git doesn't allow to update reference on currently checked out branch
@@ -549,7 +561,35 @@ def reposanitycheck(layer):
             msgs += 4
             res = True
 
-    logger.debug("reposanitycheck({0}) dir {1}, branchinfo {2}, branchinfonew {3}".format(layer, DIRNAME[layer], BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer]))
+    try:
+        remote = echo_check_call2('git remote | grep "^%s$"' % REMOTE)
+    except subprocess.CalledProcessError:
+        remote = ''
+
+    if not remote:
+        logger.error("Layer %s doesn't have the remote '%s'" % (layer, REMOTE))
+        raise Exception("Layer %s doesn't have the remote '%s'" % (layer, REMOTE))
+
+    try:
+        urlcurrent = echo_check_call2("git config remote.%s.url" % REMOTE)
+    except subprocess.CalledProcessError:
+        # git config returns 1 when the option isn't set
+        urlcurrent = ''
+        pass
+
+    # there is extra newline at the end
+    urlcurrent = urlcurrent.strip()
+
+    logger.debug("reposanitycheck(%s) dir %s, branchinfo %s, branchinfonew %s, url %s, urlnew %s" % (layer, DIRNAME[layer], BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer], URLS[layer], urlcurrent))
+
+    if urlcurrent != URLS[layer]:
+        logger.warn("Changing url for remote '%s' from '%s' to '%s'" % (REMOTE, urlcurrent, URLS[layer]))
+        echo_check_call2("git remote set-url %s %s" % (REMOTE, URLS[layer]))
+        # Sync with new remote repo
+        if subprocess.call(shlex.split(echo_cmd('git remote update'))):
+            raise Exception('Failed to fetch {} repo'.format(layer))
+
+
     newbranch = BRANCHINFONEW[layer]
     if newbranch:
         refbranchlist = str(subprocess.check_output(shlex.split(echo_cmd("git branch"))), encoding='utf-8', errors='strict')
