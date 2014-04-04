@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.10"
+SCRIPT_VERSION="3.3.16"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -42,7 +42,6 @@ TIMESTAMP=`date +%s`
 TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
 TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh start: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
 
 TIME_STR="TIME: %e %S %U %P %c %w %R %F %M %x %C"
 
@@ -64,6 +63,9 @@ cd "${SCRIPTDIR}/.."
 BUILD_TOPDIR=`echo "$SCRIPTDIR" | sed 's#/scripts/*##g'`
 ARTIFACTS="${BUILD_TOPDIR}/BUILD-ARTIFACTS"
 mkdir -p "${ARTIFACTS}"
+BUILD_TIME_LOG=${BUILD_TOPDIR}/time.txt
+
+printf "TIME: build.sh start: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 declare -i RESULT=0
 
@@ -152,7 +154,7 @@ function generate_bom {
   FILENAME=$4
 
   mkdir -p "${ARTIFACTS}/${MACHINE}/${I}" || true
-  /usr/bin/time -f "$TIME_STR" bitbake ${BBFLAGS} -g ${I}
+  /usr/bin/time -f "$TIME_STR" bitbake ${BBFLAGS} -g ${I} 2>&1 | tee /dev/stderr | grep '^TIME:' >> ${BUILD_TIME_LOG}
   grep '^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$' package-depends.dot |\
     grep -v '^"\([^"]*\)" \[label="\([^ (]*([^ ]*)\) :\([^\\]*\)\\n\([^"]*\)"\]$' |\
       sed 's/^"\([^"]*\)" \[label="\([^ ]*\) :\([^\\]*\)\\n\([^"]*\)"\]$/\1;\2;\3;\4/g' |\
@@ -238,7 +240,7 @@ else
   # It's not expected that this script would ever be used for Open webOS as is,
   # but the tests for it have been added as a guide for creating that edition.
   case ${JOB_NAME} in
-    *-official-*)
+    *-official*)
        job_type="official"
        ;;
 
@@ -345,7 +347,7 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
   TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
   TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
   TIMESTAMP_OLD=$TIMESTAMP
-  printf "TIME: build.sh before first bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
+  printf "TIME: build.sh before first bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
   if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" -o "$job_type" = "clean" ] ; then
     # don't use -before suffix for official builds, because they don't need -after and .diff because
@@ -370,7 +372,7 @@ TIMESTAMP=`date +%s`
 TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
 TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before verf/engr/clean logic: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
+printf "TIME: build.sh before verf/engr/clean logic: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" ] ; then
   if [ "$GERRIT_PROJECT" != "${BUILD_REPO}" ] ; then
@@ -402,7 +404,7 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
     TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
     TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
     TIMESTAMP_OLD=$TIMESTAMP
-    printf "TIME: build.sh before 2nd bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
+    printf "TIME: build.sh before 2nd bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
     for M in ${MACHINES}; do
       if [ ! -d BUILD-${M} ]; then
@@ -426,7 +428,7 @@ TIMESTAMP=`date +%s`
 TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
 TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before signatures: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
+printf "TIME: build.sh before signatures: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 if [ -n "${SIGNATURES}" -a -n "${MACHINES}" ]; then
   for M in ${MACHINES}; do
@@ -461,7 +463,7 @@ TIMESTAMP=`date +%s`
 TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
 TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before main build: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
+printf "TIME: build.sh before main $JOB_NAME build: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 FIRST_IMAGE=
 if [ -n "${MACHINES}" ]; then
@@ -473,7 +475,7 @@ if [ -n "${MACHINES}" ]; then
     fi
     cd BUILD-${M};
     . bitbake.rc
-    /usr/bin/time -f "$TIME_STR" bitbake ${BBFLAGS} ${IMAGES} ${TARGETS}
+    /usr/bin/time -f "$TIME_STR" bitbake ${BBFLAGS} ${IMAGES} ${TARGETS} 2>&1 | tee /dev/stderr | grep '^TIME:' >> ${BUILD_TIME_LOG}
 
     # Be aware that non-zero exit code from bitbake doesn't always mean that images weren't created.
     # All images were created if it shows "all succeeded" in" Tasks Summary":
@@ -483,11 +485,10 @@ if [ -n "${MACHINES}" ]; then
     # Summary: There were 2 ERROR messages shown, returning a non-zero exit code.
     # the ERRORs can be from failed setscene tasks or from QA checks, but weren't fatal for build.
 
-    # Collect exit codes to return them from this script.
-    RESULT+=$?
+    # Collect exit codes to return them from this script (Use PIPESTATUS to read return code from bitbake, not from added tee)
+    RESULT+=${PIPESTATUS[0]}
 
     mkdir -p "${ARTIFACTS}/${M}" || true
-    # copy webosvbox if we've built vmdk image
     if [ -e qa.log ]; then
       cp qa.log ${ARTIFACTS}/${M} || true
       # show them in console log so they are easier to spot (without downloading qa.log from artifacts
@@ -513,6 +514,7 @@ if [ -n "${MACHINES}" ]; then
           RESULT+=1
           mv deploy/images/${I}-${M}-*.vmdk ${ARTIFACTS}/${M}/${I}/ || true
         fi
+        # copy webosvbox if we've built vmdk image
         cp ../meta-webos/scripts/webosvbox ${ARTIFACTS}/${M} || true
       elif ls deploy/images/${I}-${M}-*.tar.gz >/dev/null 2>/dev/null \
         || ls deploy/images/${I}-${M}-*.epk    >/dev/null 2>/dev/null; then
@@ -522,12 +524,14 @@ if [ -n "${MACHINES}" ]; then
         if ls deploy/images/${I}-${M}-*.epk >/dev/null 2>/dev/null; then
           mv  deploy/images/${I}-${M}-*.epk ${ARTIFACTS}/${M}/${I}/
         fi
+      elif ls deploy/sdk/${I}-*.sh >/dev/null 2>/dev/null; then
+        mv    deploy/sdk/${I}-*.sh ${ARTIFACTS}/${M}/${I}/
       else
         echo "WARN: No recognized IMAGE_FSTYPES to copy to build artifacts"
       fi
       FOUND_IMAGE="false"
       # Add .md5 files for image files, if they are missing or older than image file
-      for IMG_FILE in ${ARTIFACTS}/${M}/${I}/*.vmdk* ${ARTIFACTS}/${M}/${I}/*.tar.gz ${ARTIFACTS}/${M}/${I}/*.epk; do
+      for IMG_FILE in ${ARTIFACTS}/${M}/${I}/*.vmdk* ${ARTIFACTS}/${M}/${I}/*.tar.gz ${ARTIFACTS}/${M}/${I}/*.epk ${ARTIFACTS}/${M}/${I}/*.sh; do
         if echo $IMG_FILE | grep -q "\.md5$"; then
           continue
         fi
@@ -543,27 +547,37 @@ if [ -n "${MACHINES}" ]; then
       # copy few interesting buildhistory reports only if the image was really created
       # (otherwise old report from previous build checked out from buildhistory repo could be used)
       if [ "${FOUND_IMAGE}" = "true" ] ; then
-        if [ -f ../buildhistory/images/${M}/eglibc/${I}/build-id.txt ]; then
-          cp ../buildhistory/images/${M}/eglibc/${I}/build-id.txt ${ARTIFACTS}/${M}/${I}/build-id.txt
+        # XXX Might there be other subdirectories under buildhistory/sdk that weren't created by this build?
+        if ls ../buildhistory/sdk/*/${I} >/dev/null 2>/dev/null; then
+          # Unfortunately, the subdirectories under buildhistory/sdk are <target>-<TUNE_PKGARCH>
+          for d in ../buildhistory/sdk/*; do
+            target_tunepkgarch=$(basename $d)
+            mkdir -p ${ARTIFACTS}/$target_tunepkgarch/
+            cp -a $d/${I} ${ARTIFACTS}/$target_tunepkgarch/
+          done
         else
-          cp ../buildhistory/images/${M}/eglibc/${I}/build-id ${ARTIFACTS}/${M}/${I}/build-id.txt
-        fi
-        if [ -z "$FIRST_IMAGE" ] ; then
-          # store build-id.txt from first IMAGE and first MACHINE as representant of whole build for InfoBadge
-          # instead of requiring jenkins job to hardcode MACHINE/IMAGE name in:
-          # manager.addInfoBadge("${manager.build.getWorkspace().child('buildhistory/images/qemux86/eglibc/webos-image/build-id.txt').readToString()}")
-          # we should be able to use:
-          # manager.addInfoBadge("${manager.build.getWorkspace().child('BUILD-ARTIFACTS/build-id.txt').readToString()}")
-          # in all builds (making BUILD_IMAGES/BUILD_MACHINE changes less error-prone)
-          FIRST_IMAGE="${M}/${I}"
-          cp ${ARTIFACTS}/${M}/${I}/build-id.txt ${ARTIFACTS}/build-id.txt
-        fi
-        cp ../buildhistory/images/${M}/eglibc/${I}/image-info.txt ${ARTIFACTS}/${M}/${I}/image-info.txt
-        cp ../buildhistory/images/${M}/eglibc/${I}/files-in-image.txt ${ARTIFACTS}/${M}/${I}/files-in-image.txt
-        cp ../buildhistory/images/${M}/eglibc/${I}/installed-packages.txt ${ARTIFACTS}/${M}/${I}/installed-packages.txt
-        cp ../buildhistory/images/${M}/eglibc/${I}/installed-package-sizes.txt ${ARTIFACTS}/${M}/${I}/installed-package-sizes.txt
-        if [ -e ../buildhistory/images/${M}/eglibc/${I}/installed-package-file-sizes.txt ] ; then
-          cp ../buildhistory/images/${M}/eglibc/${I}/installed-package-file-sizes.txt ${ARTIFACTS}/${M}/${I}/installed-package-file-sizes.txt
+          if [ -f ../buildhistory/images/${M}/eglibc/${I}/build-id.txt ]; then
+            cp ../buildhistory/images/${M}/eglibc/${I}/build-id.txt ${ARTIFACTS}/${M}/${I}/build-id.txt
+          else
+            cp ../buildhistory/images/${M}/eglibc/${I}/build-id ${ARTIFACTS}/${M}/${I}/build-id.txt
+          fi
+          if [ -z "$FIRST_IMAGE" ] ; then
+            # store build-id.txt from first IMAGE and first MACHINE as representant of whole build for InfoBadge
+            # instead of requiring jenkins job to hardcode MACHINE/IMAGE name in:
+            # manager.addInfoBadge("${manager.build.getWorkspace().child('buildhistory/images/qemux86/eglibc/webos-image/build-id.txt').readToString()}")
+            # we should be able to use:
+            # manager.addInfoBadge("${manager.build.getWorkspace().child('BUILD-ARTIFACTS/build-id.txt').readToString()}")
+            # in all builds (making BUILD_IMAGES/BUILD_MACHINE changes less error-prone)
+            FIRST_IMAGE="${M}/${I}"
+            cp ${ARTIFACTS}/${M}/${I}/build-id.txt ${ARTIFACTS}/build-id.txt
+          fi
+          cp ../buildhistory/images/${M}/eglibc/${I}/image-info.txt ${ARTIFACTS}/${M}/${I}/image-info.txt
+          cp ../buildhistory/images/${M}/eglibc/${I}/files-in-image.txt ${ARTIFACTS}/${M}/${I}/files-in-image.txt
+          cp ../buildhistory/images/${M}/eglibc/${I}/installed-packages.txt ${ARTIFACTS}/${M}/${I}/installed-packages.txt
+          cp ../buildhistory/images/${M}/eglibc/${I}/installed-package-sizes.txt ${ARTIFACTS}/${M}/${I}/installed-package-sizes.txt
+          if [ -e ../buildhistory/images/${M}/eglibc/${I}/installed-package-file-sizes.txt ] ; then
+            cp ../buildhistory/images/${M}/eglibc/${I}/installed-package-file-sizes.txt ${ARTIFACTS}/${M}/${I}/installed-package-file-sizes.txt
+          fi
         fi
       fi
     done
@@ -595,7 +609,7 @@ TIMESTAMP=`date +%s`
 TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
 TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before package-src-uris: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
+printf "TIME: build.sh before package-src-uris: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 # Generate list of SRC_URI and SRCREV values for all components
 echo "NOTE: generating package-srcuris.txt"
@@ -608,10 +622,10 @@ TIMESTAMP=`date +%s`
 TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
 TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before baselines: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
+printf "TIME: build.sh before baselines: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 # Don't do these for unofficial builds
-if [ -n "${WEBOS_DISTRO_BUILD_ID}" ]; then
+if [ -n "${WEBOS_DISTRO_BUILD_ID}" -a "${RESULT}" -eq 0 ]; then
   if [ ! -f latest_project_baselines.txt ]; then
     # create dummy, especially useful for verification builds (diff against origin/master)
     echo ". origin/master" > latest_project_baselines.txt
@@ -634,7 +648,7 @@ TIMESTAMP=`date +%s`
 TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
 TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh stop: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n"
+printf "TIME: build.sh stop: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 cd "${CALLDIR}"
 
