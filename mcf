@@ -139,10 +139,10 @@ def getopts():
 
         icecc = parser.add_argument_group('ICECC Configuration')
 
-        icecc.add_argument('--enable-icecc', dest='enable_icecc', action='store_true', default=True,
+        icecc.add_argument('--enable-icecc', dest='enable_icecc', action='store_true', default=False,
                            help='enable build to use icecc (default: True)')
 
-        icecc.add_argument('--disable-icecc', dest='disable_icecc', action='store_true', default=False,
+        icecc.add_argument('--disable-icecc', dest='disable_icecc', action='store_true', default=True,
                            help='disable build from using icecc (default: False)')
 
         icecc.add_argument('--enable-icecc-parallel-make', dest='icecc_parallel_make', type=int, default=16,
