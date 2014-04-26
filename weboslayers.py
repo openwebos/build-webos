@@ -51,6 +51,8 @@
 
 Distribution = "webos"
 
+Machines = ['qemux86', 'qemuarm']
+
 # github.com/openembedded repositories are read-only mirrors of the authoritative
 # repositories on git.openembedded.org
 webos_layers = [
