@@ -25,7 +25,7 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.9"
+__version__ = "4.0.10"
 
 logger = logging.getLogger(__name__)
 
@@ -473,29 +473,25 @@ def write_bblayers_conf(sourcedir, machine):
 
 def update_layers(sourcedir):
     logger.info('MCF-%s: Updating build directory' % __version__)
-    # all layers must exists before update
-    for layer in WEBOSLAYERS:
-        if not os.path.exists(os.path.abspath( LOCATIONS[layer] ) ):
-            downloadrepo(layer)
-
-    # run sanity check on repo
     layers_sanity = list()
     update_location = list()
-    updated_layers = list()
     for layer in WEBOSLAYERS:
         if LOCATIONS[layer] not in update_location:
             update_location.append(LOCATIONS[layer])
-            updated_layers.append(layer)
-            if reposanitycheck(layer) != 0:
-                layers_sanity.append(layer)
+            if not os.path.exists(os.path.abspath( LOCATIONS[layer] ) ):
+                # downloadrepo
+                downloadrepo(layer)
+            else:
+                # run sanity check on repo
+                if reposanitycheck(layer) != 0:
+                    layers_sanity.append(layer)
+
+                # update layers
+                updaterepo(layer)
 
     if layers_sanity:
         logger.info('Found local changes for repos(s) %s' % layers_sanity)
 
-    # update layers
-    for layer in WEBOSLAYERS:
-        if layer in updated_layers:
-            updaterepo(layer)
     printupdatesummary()
 
 def printupdatesummary ():
