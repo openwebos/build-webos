@@ -25,7 +25,7 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.7"
+__version__ = "4.0.8"
 
 logger = logging.getLogger(__name__)
 
@@ -519,12 +519,24 @@ def printupdatesummary ():
         if BRANCHINFONEW[layer] != BRANCHINFOCURRENT[layer]:
             logger.info('    *) switched branches from %s to %s' % (BRANCHINFOCURRENT[layer], BRANCHINFONEW[layer]))
 
+def get_remote_branch(newbranch, second_call = False):
+    remotebranch = None
+    refbranchlist = echo_check_call("git branch -r")
+    refbranch = refbranchlist.splitlines()
+    for ibranch in refbranch:
+        if ibranch == "  %s/%s" % (REMOTE, newbranch):
+            remotebranch = ibranch.strip()
+            break
+    if remotebranch or second_call:
+        return remotebranch
+    else:
+        # try it again after "git remote update"
+        echo_check_call("git remote update")
+        return get_remote_branch(newbranch, True)
+      
 def reposanitycheck(layer):
     olddir = os.getcwd()
     os.chdir(LOCATIONS[layer])
-
-    # Sync with remote repo
-    echo_check_call('git remote update')
 
     BRANCHINFOCURRENT[layer] = echo_check_call("git rev-parse --abbrev-ref HEAD").rstrip()
 
@@ -601,16 +613,9 @@ def reposanitycheck(layer):
                 needcheckout = False
                 break
 
-        refbranchlist = echo_check_call("git branch -r")
-        refbranch = refbranchlist.splitlines()
-        foundremotebranch = False
-        for ibranch in refbranch:
-            if ibranch == "  %s/%s" % (REMOTE, newbranch):
-                foundremotebranch = True
-                remotebranch = ibranch.strip()
-                break
+        remotebranch = get_remote_branch(newbranch)
 
-        if foundlocalbranch and foundremotebranch:
+        if foundlocalbranch and remotebranch:
             if needcheckout:
                 echo_check_call('git checkout %s' % newbranch)
 
@@ -651,7 +656,7 @@ def reposanitycheck(layer):
                 # to ensure we are tracking remote
                 echo_check_call('git branch --set-upstream %s %s' % (newbranch, remotebranch))
 
-        elif not foundlocalbranch and foundremotebranch:
+        elif not foundlocalbranch and remotebranch:
             echo_check_call('git checkout -b %s %s' % (newbranch, remotebranch))
         else:
             # anything else is failure
@@ -715,6 +720,7 @@ def updaterepo(layer):
                 echo_check_call(cmd)
         else:
             if CLEAN:
+                echo_check_call("git remote update")
                 echo_check_call('git reset --hard %s/%s' % (REMOTE, newbranch))
             else:
                 # current branch always tracks a remote one
