@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.21"
+SCRIPT_VERSION="3.3.22"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -30,6 +30,13 @@ CREATE_BOM=
 
 # Dump signatures, by default disabled
 SIGNATURES=
+
+# Build site passed to script from outside (Replaces detecting it from JENKINS_URL)
+BUILD_SITE=
+# Build job passed to script from outside (Replaces detecting it from JOB_NAME)
+BUILD_JOB=
+# Branch where to push buildhistory, for repositories on gerrit it should start with refs/heads (Replaces detecting it from JOB_NAME and JENKINS_URL)
+BUILD_BUILDHISTORY_BRANCH=
 
 # We assume that script is inside scripts subfolder of build project
 # and form paths based on that
@@ -83,6 +90,12 @@ OPTIONS:
   -u, --scp-url            scp will use this path to download and update
                            \${URL}/latest_project_baselines.txt and also
                            \${URL}/history will be populated
+  -S, --site               Build site, replaces detecting it from JENKINS_URL
+  -j, --jenkins            Jenkins server which triggered this job, replaces detecting it form JENKINS_UL
+  -J, --job                Type of job we want to run, replaces detecting it from JOB_NAME
+  -B, --buildhistory-ref   Branch where to push buildhistory
+                           for repositories on gerrit it should start with refs/heads
+                           replaces detecting it from JOB_NAME and JENKINS_URL
   -V, --version            Show script version
   -h, --help               Print this help message
 !
@@ -162,7 +175,113 @@ function generate_bom {
           sort > ${ARTIFACTS}/${MACHINE}/${I}/${FILENAME}
 }
 
-TEMP=`getopt -o p:m:I:T:M:bshVu: --long buildhistory-path:,manifest-path:,images:,targets:,machines:,bom,signatures,help,version,scp-url: \
+function set_build_site_and_server {
+  # JENKINS_URL is set by the Jenkins executor. If it's not set or if it's not
+  # recognized, then the build is, by definition, unofficial.
+  if [ -n "${JENKINS_URL}" ]; then
+    case "${JENKINS_URL}" in
+      https://gecko.palm.com/jenkins/)
+        BUILD_SITE="svl"
+        BUILD_JENKINS_SERVER="gecko"
+        ;;
+      https://anaconda.palm.com/jenkins/)
+        BUILD_SITE="svl"
+        BUILD_JENKINS_SERVER="anaconda"
+        ;;
+      # Add detection of other sites here
+      *)
+        echo "Unrecognized JENKINS_URL: '${JENKINS_URL}'"
+        exit 1
+        ;;
+    esac
+  fi
+}
+
+function set_build_job {
+  # JOB_NAME is set by the Jenkins executor
+  if [ -z "${JOB_NAME}" ] ; then
+    echo "JENKINS_URL set but JOB_NAME isn't"
+    exit 1
+  fi
+
+  # It's not expected that this script would ever be used for Open webOS as is,
+  # but the tests for it have been added as a guide for creating that edition.
+  case ${JOB_NAME} in
+    *-official-*)
+      BUILD_JOB="official"
+      ;;
+    *-official.nonMP*)
+      BUILD_JOB="official"
+      ;;
+    clean-engineering-*)
+      # it cannot be verf or engr, because clean builds are managing layer checkouts alone
+      BUILD_JOB="clean"
+      ;;
+    *-engineering-*)
+      BUILD_JOB="engr"
+      ;;
+    *-engineering.MP*)
+      BUILD_JOB="engr"
+      ;;
+    *-verify-*)
+      BUILD_JOB="verf"
+      ;;
+    # The *-integrate-* jobs are like the verification builds done right before
+    # the official builds. They have different names so that they can use a
+    # separate, special pool of Jenkins slaves.
+    *-integrate-*)
+      BUILD_JOB="integ"
+      ;;
+    # The *-multilayer-* builds allow developers to trigger a multi-layer build
+    # from their desktop, without using the Jenkins parameterized build UI.
+    #
+    # The 'mlverf' job type is used so that the build-id makes it obvious that
+    # a multilayer build was performed (useful when evaluating CCC's).
+    *-multilayer-*)
+      BUILD_JOB="mlverf"
+      ;;
+    # Legacy job names
+    build-webos-nightly|build-webos|build-webos-qemu*)
+      BUILD_JOB="official"
+      ;;
+    *-layers-verification)
+      BUILD_JOB="verf"
+      ;;
+    build-webos-*)
+      BUILD_JOB="${JOB_NAME#build-webos-}"
+      ;;
+    # Add detection of other job types here
+    *)
+      echo "Unrecognized JOB_NAME: '${JOB_NAME}'"
+      BUILD_JOB="unrecognized!${JOB_NAME}"
+      ;;
+  esac
+
+  # Convert BUILD_JOBs we recognize into abbreviations
+  case ${BUILD_JOB} in
+    engineering)
+      BUILD_JOB="engr"
+      ;;
+  esac
+}
+
+function set_buildhistory_branch {
+  # When we're running with BUILD_JENKINS_SERVER set we assume that buildhistory repo is on gerrit server (needs refs/heads/ prefix)
+  [ -n "${BUILD_JENKINS_SERVER}" -a -n "${BUILD_BUILDHISTORY_PUSH_REF_PREFIX}" ] && BUILD_BUILDHISTORY_PUSH_REF_PREFIX="refs/heads/"
+  # We need to prefix branch name, because anaconda and gecko have few jobs with the same name
+  [ "${BUILD_JENKINS_SERVER}" = "anaconda" -a "${BUILD_BUILDHISTORY_PUSH_REF_PREFIX}" = "refs/heads/" ] && BUILD_BUILDHISTORY_PUSH_REF_PREFIX="${BUILD_BUILDHISTORY_PUSH_REF_PREFIX}anaconda-"
+  # default is whole job name
+  BUILD_BUILDHISTORY_BRANCH="${JOB_NAME}-${BUILD_NUMBER}"
+
+  # checkouts master, pushes to master - We assume that there won't be two slaves
+  # doing official build at the same time, second build will fail to push buildhistory
+  # when this assumption is broken.
+  [ "${BUILD_JOB}" = "official" ] && BUILD_BUILDHISTORY_BRANCH="master"
+
+  BUILD_BUILDHISTORY_PUSH_REF=${BUILDHISTORY_PUSH_REF_PREFIX}${BUILDHISTORY_BRANCH}
+}
+
+TEMP=`getopt -o p:m:I:T:M:S:j:J:B:u:bshV --long buildhistory-path:,manifest-path:,images:,targets:,machines:,scp-url:,site:,jenkins:,job:,buildhistory-ref:,bom,signatures,help,version \
      -n $(basename $0) -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 2 ; fi
@@ -177,10 +296,14 @@ while true ; do
     -I|--images) IMAGES="$2" ; shift 2 ;;
     -T|--targets) TARGETS="$2" ; shift 2 ;;
     -M|--machines) BMACHINES="$2" ; shift 2 ;;
+    -S|--site) BUILD_SITE="$2" ; shift 2 ;;
+    -j|--jenkins) BUILD_JENKINS_SERVER="$2" ; shift 2 ;;
+    -J|--job) BUILD_JOB="$2" ; shift 2 ;;
+    -B|--buildhistory-ref) BUILD_BUILDHISTORY_PUSH_REF="$2" ; shift 2 ;;
+    -u|--scp-url) URL="$2" ; shift 2 ;;
     -b|--bom) CREATE_BOM="Y" ; shift ;;
     -s|--signatures) SIGNATURES="Y" ; shift ;;
     -h|--help) showusage ; shift ;;
-    -u|--scp-url) URL="$2" ; shift 2 ;;
     -V|--version) echo `basename $0` ${SCRIPT_VERSION}; exit ;;
     --) shift ; break ;;
     *) showusage ;;
@@ -193,142 +316,37 @@ if [ ! -f "Makefile" ] ; then
   exit 2
 fi
 
-# JENKINS_URL is set by the Jenkins executor. If it's not set or if it's not
-# recognized, then the build is, by definition, unofficial.
-if [ -n "${JENKINS_URL}" ]; then
-  # when we're running with JENKINS_URL set we assume that buildhistory repo is on gerrit server (needs refs/heads/ prefix)
-  [ -n "${BUILDHISTORY_BRANCH_PREFIX}" ] || BUILDHISTORY_BRANCH_PREFIX="refs/heads/"
-  case "${JENKINS_URL}" in
-    https://gecko.palm.com/jenkins/)
-       site="svl"
-       ;;
+[ -n "${BUILD_SITE}" -a -n "${BUILD_JENKINS_SERVER}" ] || set_build_site_and_server
+[ -n "${BUILD_TYPE}" ] || set_build_type
+[ -n "${BUILD_BUILDHISTORY_PUSH_REF}" ] || set_buildhistory_branch
 
-    https://anaconda.palm.com/jenkins/)
-       site="svl"
-       # we need to prefix branch name, because anaconda as well as gecko have jobs with the same name, e.g. build-webos-verify-qemux86
-       BUILDHISTORY_BRANCH_PREFIX="${BUILDHISTORY_BRANCH_PREFIX}anaconda-"
-       ;;
 
-    https://anaconda.palm.com/jenkins/)
-       # Since anaconda is not intended for official builds
-       unset JENKINS_URL
-       ;;
-
-    # Add detection of other sites here
-
-    *) echo "Unrecognized JENKINS_URL: '${JENKINS_URL}'"
-       unset JENKINS_URL
-       ;;
-  esac
-fi
-
-if [ -z "${JENKINS_URL}" ]; then
+if [ -z "${BUILD_SITE}" -o "${BUILD_JENKINS_SERVER}" = "anaconda" ]; then
   # Let the distro determine the policy on setting WEBOS_DISTRO_BUILD_ID when builds
   # are unofficial
   # Don't unset BUILDHISTORY_BRANCH so that someone can use build.sh to maintain a local buildhistory repo.
   unset WEBOS_DISTRO_BUILD_ID
 else
-  # JOB_NAME is set by the Jenkins executor
-  if [ -z "${JOB_NAME}" ] ; then
-    echo "JENKINS_URL set but JOB_NAME isn't"
-    exit 1
-  fi
+  [ -n "${BUILD_JOB}" ] || set_build_job
 
-  # default is whole job name
-  BUILDHISTORY_BRANCH="${JOB_NAME}-${BUILD_NUMBER}"
-
-  # It's not expected that this script would ever be used for Open webOS as is,
-  # but the tests for it have been added as a guide for creating that edition.
-  case ${JOB_NAME} in
-    *-official-*)
-       job_type="official"
-       ;;
-
-    *-official.nonMP*)
-       job_type="official"
-       ;;
-    clean-engineering-*)
-       # it cannot be verf or engr, because clean builds are managing layer checkouts alone
-       job_type="clean"
-       ;;
-
-    *-engineering-*)
-       job_type="engr"
-       ;;
-
-    *-engineering.MP*)
-       job_type="engr"
-       ;;
-
-    *-verify-*)
-       job_type="verf"
-       ;;
-
-    # The *-integrate-* jobs are like the verification builds done right before
-    # the official builds. They have different names so that they can use a
-    # separate, special pool of Jenkins slaves.
-    *-integrate-*)
-       job_type="integ"
-       ;;
-
-    # The *-multilayer-* builds allow developers to trigger a multi-layer build
-    # from their desktop, without using the Jenkins parameterized build UI.
-    #
-    # The 'mlverf' job type is used so that the build-id makes it obvious that
-    # a multilayer build was performed (useful when evaluating CCC's).
-    *-multilayer-*)
-       job_type="mlverf"
-       ;;
-
-    # Legacy job names
-    build-webos-nightly|build-webos|build-webos-qemu*)
-       job_type="official"
-       ;;
-
-    *-layers-verification)
-       job_type="verf"
-       ;;
-
-    build-webos-*)
-       job_type="${JOB_NAME#build-webos-}"
-       ;;
-
-    # Add detection of other job types here
-
-    *) echo "Unrecognized JOB_NAME: '${JOB_NAME}'"
-       job_type="unrecognized!${JOB_NAME}"
-       ;;
-  esac
-
-  # Convert job_types we recognize into abbreviations
-  case $job_type in
-    engineering)
-      job_type="engr"
-      ;;
-  esac
-
-  # If this is an official build, no job_type prefix appears in
+  # If this is an official build, no BUILD_JOB prefix appears in
   # WEBOS_DISTRO_BUILD_ID regardless of the build site.
-  if [ ${job_type} = "official" ]; then
-    if [ ${site} = ${AUTHORITATIVE_OFFICIAL_BUILD_SITE} ]; then
-      site=""
+  if [ "${BUILD_JOB}" = "official" ]; then
+    if [ ${BUILD_SITE} = ${AUTHORITATIVE_OFFICIAL_BUILD_SITE} ]; then
+      BUILD_SITE=""
     fi
-    job_type=""
-    # checkouts master, pushes to master - We assume that there won't be two slaves
-    # doing official build at the same time, second build will fail to push buildhistory
-    # when this assumption is broken.
-    BUILDHISTORY_BRANCH="master"
+    BUILD_JOB=""
   else
-    # job_type can not contain any hyphens
-    job_type="${job_type//-/}"
+    # BUILD_JOB can not contain any hyphens
+    BUILD_JOB="${BUILD_JOB//-/}"
   fi
 
   # Append the separators to site and build-type.
   #
   # Use intermediate variables so that the remainder of the script need not concern
   # itself with the separators, which are purely related to formatting the build id.
-  idsite="$site"
-  idtype="$job_type"
+  idsite="${BUILD_SITE}"
+  idtype="${BUILD_JOB}"
 
   if [ -n "$idsite" ]; then
     idsite="${idsite}-"
@@ -340,7 +358,7 @@ else
 
   # BUILD_NUMBER should be set by the Jenkins executor
   if [ -z "${BUILD_NUMBER}" ] ; then
-    echo "JENKINS_URL is set, but BUILD_NUMBER isn't"
+    echo "BUILD_SITE is set, but BUILD_NUMBER isn't"
     exit 1
   fi
 
@@ -356,7 +374,7 @@ if [ -n "${CREATE_BOM}" -a -n "${BMACHINES}" ]; then
   TIMESTAMP_OLD=$TIMESTAMP
   printf "TIME: build.sh before first bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
-  if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" -o "$job_type" = "clean" ] ; then
+  if [ "${BUILD_JOB}" = "verf" -o "${BUILD_JOB}" = "mlverf" -o "${BUILD_JOB}" = "integ" -o "${BUILD_JOB}" = "engr" -o "${BUILD_JOB}" = "clean" ] ; then
     # don't use -before suffix for official builds, because they don't need -after and .diff because
     # there is no logic for using different revisions than weboslayers.py
     BOM_FILE_SUFFIX="-before"
@@ -381,7 +399,7 @@ TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
 printf "TIME: build.sh before verf/engr/clean logic: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
-if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" ] ; then
+if [ "${BUILD_JOB}" = "verf" -o "${BUILD_JOB}" = "mlverf" -o "${BUILD_JOB}" = "integ" -o "${BUILD_JOB}" = "engr" ] ; then
   if [ "$GERRIT_PROJECT" != "${BUILD_REPO}" ] ; then
     set -e # checkout issues are critical for verification and engineering builds
     for project in "${BUILD_LAYERS[@]}" ; do
@@ -393,7 +411,7 @@ if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o 
   BBFLAGS="${BBFLAGS} -k"
 fi
 
-if [ "$job_type" = "clean" ] ; then
+if [ "${BUILD_JOB}" = "clean" ] ; then
   set -e # checkout issues are critical for clean build
   desc="[DESC]"
   for project in "${BUILD_LAYERS[@]}" ; do
@@ -406,7 +424,7 @@ fi
 
 # Generate BOM files again, this time with metadata possibly different for engineering and verification builds
 if [ -n "${CREATE_BOM}" -a -n "${BMACHINES}" ]; then
-  if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" -o "$job_type" = "clean" ] ; then
+  if [ "${BUILD_JOB}" = "verf" -o "${BUILD_JOB}" = "mlverf" -o "${BUILD_JOB}" = "integ" -o "${BUILD_JOB}" = "engr" -o "${BUILD_JOB}" = "clean" ] ; then
     TIMESTAMP=`date +%s`
     TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
     TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
@@ -453,19 +471,19 @@ if [ -n "${SIGNATURES}" -a -n "${BMACHINES}" ]; then
   done
 fi
 
-# If there is git checkout in buildhistory dir and we have BUILDHISTORY_BRANCH
+# If there is git checkout in buildhistory dir and we have BUILD_BUILDHISTORY_PUSH_REF
 # add or replace push repo in webos-local
 # Write it this way so that BUILDHISTORY_PUSH_REPO is kept in the same place in webos-local.conf
-if [ -d "buildhistory/.git" -a -n "${BUILDHISTORY_BRANCH}" ] ; then
+if [ -d "buildhistory/.git" -a -n "${BUILD_BUILDHISTORY_PUSH_REF}" ] ; then
   if [ -f webos-local.conf ] && grep -q ^BUILDHISTORY_PUSH_REPO webos-local.conf ; then
-    sed "s#^BUILDHISTORY_PUSH_REPO.*#BUILDHISTORY_PUSH_REPO ?= \"origin master:${BUILDHISTORY_BRANCH_PREFIX}${BUILDHISTORY_BRANCH} 2>/dev/null\"#g" -i webos-local.conf
+    sed "s#^BUILDHISTORY_PUSH_REPO.*#BUILDHISTORY_PUSH_REPO ?= \"origin master:${BUILD_BUILDHISTORY_PUSH_REF} 2>/dev/null\"#g" -i webos-local.conf
   else
-    echo "BUILDHISTORY_PUSH_REPO ?= \"origin master:${BUILDHISTORY_BRANCH_PREFIX}${BUILDHISTORY_BRANCH} 2>/dev/null\"" >> webos-local.conf
+    echo "BUILDHISTORY_PUSH_REPO ?= \"origin master:${BUILD_BUILDHISTORY_PUSH_REF} 2>/dev/null\"" >> webos-local.conf
   fi
-  echo "INFO: buildhistory will be pushed to '${BUILDHISTORY_BRANCH_PREFIX}${BUILDHISTORY_BRANCH}'"
+  echo "INFO: buildhistory will be pushed to '${BUILD_BUILDHISTORY_PUSH_REF}'"
 else
   [ -f webos-local.conf ] && sed "/^BUILDHISTORY_PUSH_REPO.*/d" -i webos-local.conf
-  echo "INFO: buildhistory won't be pushed because buildhistory directory isn't git repo or BUILDHISTORY_BRANCH wasn't set"
+  echo "INFO: buildhistory won't be pushed because buildhistory directory isn't git repo or BUILD_BUILDHISTORY_PUSH_REF wasn't set"
 fi
 
 TIMESTAMP=`date +%s`
