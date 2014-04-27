@@ -832,9 +832,9 @@ if __name__ == '__main__':
         ['@srcdir@', srcdir],
         ]
 
-    icecc_disable_str = '--enable-icecc'
-    if options.disable_icecc:
-        icecc_disable_str ='--disable-icecc'
+    icecc_disable_str = '--disable-icecc'
+    if options.enable_icecc:
+        icecc_disable_str ='--enable-icecc'
 
     icecc_replacements = [
         ['@icecc_disable_enable@', '{}'.format(icecc_disable_str)],
