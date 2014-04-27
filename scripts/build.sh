@@ -18,7 +18,8 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.22"
+SCRIPT_VERSION="3.3.23"
+SCRIPT_NAME=`basename $0`
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -42,13 +43,8 @@ BUILD_BUILDHISTORY_BRANCH=
 # and form paths based on that
 CALLDIR=${PWD}
 
-TIMESTAMP_START=`date +%s`
-TIMESTAMP_OLD=$TIMESTAMP_START
-
-TIMESTAMP=`date +%s`
-TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-TIMESTAMP_OLD=$TIMESTAMP
+BUILD_TIMESTAMP_START=`date +%s`
+BUILD_TIMESTAMP_OLD=$BUILD_TIMESTAMP_START
 
 TIME_STR="TIME: %e %S %U %P %c %w %R %F %M %x %C"
 
@@ -72,7 +68,17 @@ ARTIFACTS="${BUILD_TOPDIR}/BUILD-ARTIFACTS"
 mkdir -p "${ARTIFACTS}"
 BUILD_TIME_LOG=${BUILD_TOPDIR}/time.txt
 
-printf "TIME: build.sh-${SCRIPT_VERSION} start: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
+function print_timestamp {
+  BUILD_TIMESTAMP=`date +%s`
+  BUILD_TIMESTAMPH=`date +%Y%m%dT%TZ`
+
+  local BUILD_TIMEDIFF=`expr ${BUILD_TIMESTAMP} - ${BUILD_TIMESTAMP_OLD}`
+  local BUILD_TIMEDIFF_START=`expr ${BUILD_TIMESTAMP} - ${BUILD_TIMESTAMP_START}`
+  BUILD_TIMESTAMP_OLD=${BUILD_TIMESTAMP}
+  printf "TIME: ${SCRIPT_NAME}-${SCRIPT_VERSION} $1: ${BUILD_TIMESTAMP}, +${BUILD_TIMEDIFF}, +${BUILD_TIMEDIFF_START}, ${BUILD_TIMESTAMPH}\n" | tee -a ${BUILD_TIME_LOG}
+}
+
+print_timestamp "start"
 
 declare -i RESULT=0
 
@@ -368,12 +374,7 @@ fi
 
 # Generate BOM files with metadata checked out by mcf (pinned versions)
 if [ -n "${CREATE_BOM}" -a -n "${BMACHINES}" ]; then
-  TIMESTAMP=`date +%s`
-  TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-  TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-  TIMESTAMP_OLD=$TIMESTAMP
-  printf "TIME: build.sh before first bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
-
+  print_timestamp "before first bom"
   if [ "${BUILD_JOB}" = "verf" -o "${BUILD_JOB}" = "mlverf" -o "${BUILD_JOB}" = "integ" -o "${BUILD_JOB}" = "engr" -o "${BUILD_JOB}" = "clean" ] ; then
     # don't use -before suffix for official builds, because they don't need -after and .diff because
     # there is no logic for using different revisions than weboslayers.py
@@ -393,11 +394,7 @@ if [ -n "${CREATE_BOM}" -a -n "${BMACHINES}" ]; then
   done
 fi
 
-TIMESTAMP=`date +%s`
-TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before verf/engr/clean logic: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
+print_timestamp "before verf/engr/clean logic"
 
 if [ "${BUILD_JOB}" = "verf" -o "${BUILD_JOB}" = "mlverf" -o "${BUILD_JOB}" = "integ" -o "${BUILD_JOB}" = "engr" ] ; then
   if [ "$GERRIT_PROJECT" != "${BUILD_REPO}" ] ; then
@@ -425,12 +422,7 @@ fi
 # Generate BOM files again, this time with metadata possibly different for engineering and verification builds
 if [ -n "${CREATE_BOM}" -a -n "${BMACHINES}" ]; then
   if [ "${BUILD_JOB}" = "verf" -o "${BUILD_JOB}" = "mlverf" -o "${BUILD_JOB}" = "integ" -o "${BUILD_JOB}" = "engr" -o "${BUILD_JOB}" = "clean" ] ; then
-    TIMESTAMP=`date +%s`
-    TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-    TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-    TIMESTAMP_OLD=$TIMESTAMP
-    printf "TIME: build.sh before 2nd bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
-
+    print_timestamp "before 2nd bom"
     for MACHINE in ${BMACHINES}; do
       if [ ! -d BUILD-${MACHINE} ]; then
         echo "ERROR: Build for MACHINE '${MACHINE}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${MACHINE} directory"
@@ -449,11 +441,7 @@ if [ -n "${CREATE_BOM}" -a -n "${BMACHINES}" ]; then
   fi
 fi
 
-TIMESTAMP=`date +%s`
-TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before signatures: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
+print_timestamp "before signatures"
 
 if [ -n "${SIGNATURES}" -a -n "${BMACHINES}" ]; then
   for MACHINE in ${BMACHINES}; do
@@ -486,11 +474,7 @@ else
   echo "INFO: buildhistory won't be pushed because buildhistory directory isn't git repo or BUILD_BUILDHISTORY_PUSH_REF wasn't set"
 fi
 
-TIMESTAMP=`date +%s`
-TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before main $JOB_NAME build: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
+print_timestamp "before main '${JOB_NAME}' build"
 
 FIRST_IMAGE=
 if [ -n "${BMACHINES}" ]; then
@@ -632,11 +616,7 @@ else
   RESULT+=$?
 fi
 
-TIMESTAMP=`date +%s`
-TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before package-src-uris: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
+print_timestamp "before package-src-uris"
 
 # Generate list of SRC_URI and SRCREV values for all components
 echo "NOTE: generating package-srcuris.txt"
@@ -645,11 +625,7 @@ BUILDHISTORY_PACKAGE_SRCURIS="package-srcuris.txt"
 ./oe-core/scripts/buildhistory-collect-srcrevs buildhistory >>${BUILDHISTORY_PACKAGE_SRCURIS}
 cp ${BUILDHISTORY_PACKAGE_SRCURIS} ${ARTIFACTS} || true
 
-TIMESTAMP=`date +%s`
-TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh before baselines: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
+print_timestamp "before baselines"
 
 # Don't do these for unofficial builds
 if [ -n "${WEBOS_DISTRO_BUILD_ID}" -a "${RESULT}" -eq 0 ]; then
@@ -671,11 +647,7 @@ if [ -n "${WEBOS_DISTRO_BUILD_ID}" -a "${RESULT}" -eq 0 ]; then
   cp build_changes.log ${ARTIFACTS} || true
 fi
 
-TIMESTAMP=`date +%s`
-TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
-TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
-TIMESTAMP_OLD=$TIMESTAMP
-printf "TIME: build.sh stop: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
+print_timestamp "stop"
 
 cd "${CALLDIR}"
 
