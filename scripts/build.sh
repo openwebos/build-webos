@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.28"
+SCRIPT_VERSION="3.3.29"
 SCRIPT_NAME=`basename $0`
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
@@ -510,32 +510,32 @@ else
       mkdir -p "${ARTIFACTS}/${MACHINE}/${I}" || true
       # we store only tar.gz, vmdk.zip and .epk images
       # and we don't publish kernel images anymore
-      if ls deploy/images/${I}-${MACHINE}-*.vmdk >/dev/null 2>/dev/null; then
+      if ls deploy/images/${MACHINE}/${I}-${MACHINE}-*.vmdk >/dev/null 2>/dev/null; then
         if type zip >/dev/null 2>/dev/null; then
           # zip vmdk images if they exists
-          find deploy/images/${I}-${MACHINE}-*.vmdk -exec zip -j {}.zip {} \; || true
-          mv deploy/images/${I}-${MACHINE}-*.vmdk.zip ${ARTIFACTS}/${MACHINE}/${I}/ || true
+          find deploy/images/${MACHINE}/${I}-${MACHINE}-*.vmdk -exec zip -j {}.zip {} \; || true
+          mv deploy/images/${MACHINE}/${I}-${MACHINE}-*.vmdk.zip ${ARTIFACTS}/${MACHINE}/${I}/ || true
         else
           # report failure and publish vmdk
           RESULT+=1
-          mv deploy/images/${I}-${MACHINE}-*.vmdk ${ARTIFACTS}/${MACHINE}/${I}/ || true
+          mv deploy/images/${MACHINE}/${I}-${MACHINE}-*.vmdk ${ARTIFACTS}/${MACHINE}/${I}/ || true
         fi
         # copy webosvbox if we've built vmdk image
         cp ../meta-webos/scripts/webosvbox ${ARTIFACTS}/${MACHINE} || true
         # copy few more files for creating different vmdk files with the same rootfs
-        mv deploy/images/${I}-${MACHINE}-*.rootfs.ext3 ${ARTIFACTS}/${MACHINE}/${I}/ || true
+        mv deploy/images/${MACHINE}/${I}-${MACHINE}-*.rootfs.ext3 ${ARTIFACTS}/${MACHINE}/${I}/ || true
         cp sysroots/${MACHINE}/usr/lib/syslinux/mbr.bin ${ARTIFACTS}/${MACHINE}/${I}/ || true
         # this won't work in jobs which inherit rm_work, but until we change the image build to stage them use WORKDIR paths
         cp work/${MACHINE}*/${I}/*/*/hdd/boot/ldlinux.sys ${ARTIFACTS}/${MACHINE}/${I}/ 2>/dev/null || echo "INFO: ldlinux.sys doesn't exist, probably using rm_work"
         cp work/${MACHINE}*/${I}/*/*/hdd/boot/syslinux.cfg ${ARTIFACTS}/${MACHINE}/${I}/ 2>/dev/null || echo "INFO: syslinux.cfg doesn't exist, probably using rm_work"
         cp work/${MACHINE}*/${I}/*/*/hdd/boot/vmlinuz ${ARTIFACTS}/${MACHINE}/${I}/ 2>/dev/null || echo "INFO: vmlinuz doesn't exist, probably using rm_work"
-      elif ls deploy/images/${I}-${MACHINE}-*.tar.gz >/dev/null 2>/dev/null \
-        || ls deploy/images/${I}-${MACHINE}-*.epk    >/dev/null 2>/dev/null; then
-        if ls deploy/images/${I}-${MACHINE}-*.tar.gz >/dev/null 2>/dev/null; then
-          mv  deploy/images/${I}-${MACHINE}-*.tar.gz ${ARTIFACTS}/${MACHINE}/${I}/
+      elif ls deploy/images/${MACHINE}/${I}-${MACHINE}-*.tar.gz >/dev/null 2>/dev/null \
+        || ls deploy/images/${MACHINE}/${I}-${MACHINE}-*.epk    >/dev/null 2>/dev/null; then
+        if ls deploy/images/${MACHINE}/${I}-${MACHINE}-*.tar.gz >/dev/null 2>/dev/null; then
+          mv  deploy/images/${MACHINE}/${I}-${MACHINE}-*.tar.gz ${ARTIFACTS}/${MACHINE}/${I}/
         fi
-        if ls deploy/images/${I}-${MACHINE}-*.epk >/dev/null 2>/dev/null; then
-          mv  deploy/images/${I}-${MACHINE}-*.epk ${ARTIFACTS}/${MACHINE}/${I}/
+        if ls deploy/images/${MACHINE}/${I}-${MACHINE}-*.epk >/dev/null 2>/dev/null; then
+          mv  deploy/images/${MACHINE}/${I}-${MACHINE}-*.epk ${ARTIFACTS}/${MACHINE}/${I}/
         fi
       elif ls deploy/sdk/${I}-*.sh >/dev/null 2>/dev/null; then
         mv    deploy/sdk/${I}-*.sh ${ARTIFACTS}/${MACHINE}/${I}/
