@@ -127,7 +127,10 @@ PACKAGE_CLASSES ?= "package_ipk"
 # you can build the SDK packages for architectures other than the machine you are 
 # running the build on (i.e. building i686 packages on an x86_64 host._
 # Supported values are i686 and x86_64
-#SDKMACHINE ?= "i686"
+#
+# Using ??= so that it can be overridden in webos-local.conf without having to
+# resort to using _forcevariable.
+SDKMACHINE ??= "i686"
 
 #
 # Extra image configuration defaults
