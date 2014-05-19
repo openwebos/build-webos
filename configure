@@ -11,7 +11,7 @@
 # This configure script is free software; the Free Software Foundation
 # gives unlimited permission to copy, distribute and modify it.
 #
-# Copyright (c) 2008-2013 LG Electronics, Inc.
+# Copyright (c) 2008-2014 LG Electronics, Inc.
 ## -------------------- ##
 ## M4sh Initialization. ##
 ## -------------------- ##
@@ -1265,28 +1265,32 @@ Optional Features:
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --enable-parallel-make=N
                           maximum number of tasks for each submake of bitbake
-                          to spawn (default: "1")
+                          to spawn (default: "0" = 2x the number of processor
+                          cores)
   --enable-bb-number-threads=N
                           maximum number of tasks for each submake of bitbake
-                          to spawn (default: "1")
-  --disable-icecc         disable build from using icecc (default: "False")
+                          to spawn (default: "0" = 2x the number of processor
+                          cores)
+  --disable-icecc         disable build from using ICECC (default: "False" =
+                          use ICECC)
   --enable-icecc-parallel-make=N
                           maximum number of threads for distribute make with
-                          icecc (default: "16")
+                          ICECC (default: "0" = 4x the number of processor
+                          cores)
   --enable-icecc-location=LOCATION
-                          where is the icecc tool location (default: None)
+                          where is the ICECC tool location (default: None)
   --enable-icecc-env-exec=LOCATION
-                          where is the icecc environment script location
+                          where is the ICECC environment script location
                           (default: None)
   --enable-icecc-user-package-blacklist=LIST
                           Space separated list of components/recipes to be
-                          excluded from building with icecc (default: None)
+                          excluded from building with ICECC (default: None)
   --enable-icecc-user-class-blacklist=LIST
                           Space separated list of components/recipes class to
-                          be excluded from building with icecc (default: None)
+                          be excluded from building with ICECC (default: None)
   --enable-icecc-user-package-whitelist=LIST
                           Space separated list of components/recipes to force
-                          build with icecc (default: None)
+                          build with ICECC (default: None)
   --enable-premirror=PREMIRROR
                           set PREMIRROR (default: none, own-mirrors class will
                           not be used)
@@ -1380,7 +1384,7 @@ Copyright (C) 2010 Free Software Foundation, Inc.
 This configure script is free software; the Free Software Foundation
 gives unlimited permission to copy, distribute and modify it.
 
-Copyright (c) 2008-2013 LG Electronics, Inc.
+Copyright (c) 2008-2014 LG Electronics, Inc.
 _ACEOF
   exit
 fi
@@ -1769,11 +1773,11 @@ $as_echo_n "checking parallel_make... " >&6; }
 if test "${enable_parallel_make+set}" = set; then :
   enableval=$enable_parallel_make;
 else
-  enable_parallel_make="1"
+  enable_parallel_make="0"
 fi
 
 case "$enable_parallel_make" in
-     no|yes) enable_parallel_make=1 ;;
+     no|yes) enable_parallel_make=0 ;;
 esac
 parallel_make=$enable_parallel_make
 
@@ -1788,18 +1792,18 @@ $as_echo_n "checking bb_number_threads... " >&6; }
 if test "${enable_bb_number_threads+set}" = set; then :
   enableval=$enable_bb_number_threads;
 else
-  enable_bb_number_threads="1"
+  enable_bb_number_threads="0"
 fi
 
 case "$enable_bb_number_threads" in
-     no|yes) enable_bb_number_threads=1 ;;
+     no|yes) enable_bb_number_threads=0 ;;
 esac
 bb_number_threads=$enable_bb_number_threads
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_bb_number_threads" >&5
 $as_echo "$enable_bb_number_threads" >&6; }
 
-# icecc
+# ICECC
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking disable-icecc" >&5
 $as_echo_n "checking disable-icecc... " >&6; }
 # Check whether --enable-icecc was given.
@@ -1824,11 +1828,11 @@ $as_echo_n "checking icecc-parallel-make... " >&6; }
 if test "${enable_icecc_parallel_make+set}" = set; then :
   enableval=$enable_icecc_parallel_make;
 else
-  enable_icecc_parallel_make="16"
+  enable_icecc_parallel_make="0"
 fi
 
 case "$enable_icecc_parallel_make" in
-     no|yes) enable_icecc_parallel_make=16 ;;
+     no|yes) enable_icecc_parallel_make=0 ;;
 esac
 icecc_parallel_make=$enable_icecc_parallel_make
 
