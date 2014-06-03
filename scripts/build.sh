@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.24"
+SCRIPT_VERSION="3.3.25"
 SCRIPT_NAME=`basename $0`
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
@@ -56,7 +56,7 @@ popd > /dev/null
 # Now let's ensure that:
 pushd ${SCRIPTDIR} > /dev/null
 if [ ! -d "../scripts" ] ; then
-  echo "Make sure that `basename $0` is in scripts folder of project"
+  echo "Make sure that ${SCRIPT_NAME} is in scripts folder of project"
   exit 2
 fi
 popd > /dev/null
@@ -83,11 +83,9 @@ print_timestamp "start"
 declare -i RESULT=0
 
 function showusage {
-  echo "Usage: `basename $0` -p=path -m=path [OPTION...] [--] BUILD-TARGET..."
+  echo "Usage: ${SCRIPT_NAME} [OPTION...]"
   cat <<!
 OPTIONS:
-  -p, --buildhistory-path  Ignored, for backwards compatibility
-  -m, --manifest-path      Ignored, for backwards compatibility
   -I, --images             Images to build
   -T, --targets            Targets to build (unlike images they aren't copied from buildhistory)
   -M, --machines           Machines to build
@@ -287,7 +285,7 @@ function set_buildhistory_branch {
   BUILD_BUILDHISTORY_PUSH_REF=${BUILDHISTORY_PUSH_REF_PREFIX}${BUILDHISTORY_BRANCH}
 }
 
-TEMP=`getopt -o p:m:I:T:M:S:j:J:B:u:bshV --long buildhistory-path:,manifest-path:,images:,targets:,machines:,scp-url:,site:,jenkins:,job:,buildhistory-ref:,bom,signatures,help,version \
+TEMP=`getopt -o I:T:M:S:j:J:B:u:bshV --long images:,targets:,machines:,scp-url:,site:,jenkins:,job:,buildhistory-ref:,bom,signatures,help,version \
      -n $(basename $0) -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 2 ; fi
@@ -297,8 +295,6 @@ eval set -- "$TEMP"
 
 while true ; do
   case $1 in
-    -p|--buildhistory-path) echo "-p|--buildhistory-path is ignored now, you should remove it from your script" ; shift 2 ;;
-    -m|--manifest-path) echo "-m|--manifest-path is ignored now, you should remove it from your script" ; shift 2 ;;
     -I|--images) IMAGES="$2" ; shift 2 ;;
     -T|--targets) TARGETS="$2" ; shift 2 ;;
     -M|--machines) BMACHINES="$2" ; shift 2 ;;
@@ -310,9 +306,10 @@ while true ; do
     -b|--bom) CREATE_BOM="Y" ; shift ;;
     -s|--signatures) SIGNATURES="Y" ; shift ;;
     -h|--help) showusage ; shift ;;
-    -V|--version) echo `basename $0` ${SCRIPT_VERSION}; exit ;;
+    -V|--version) echo ${SCRIPT_NAME} ${SCRIPT_VERSION}; exit ;;
     --) shift ; break ;;
-    *) showusage ;;
+    *) echo "${SCRIPT_NAME} Unrecognized option '$1'";
+       showusage ;;
   esac
 done
 
@@ -477,7 +474,9 @@ fi
 print_timestamp "before main '${JOB_NAME}' build"
 
 FIRST_IMAGE=
-if [ -n "${BMACHINES}" ]; then
+if [ -z "${BMACHINES}" ]; then
+  echo "ERROR: calling build.sh without -M parameter"
+else
   for MACHINE in ${BMACHINES}; do
     if [ ! -d BUILD-${MACHINE} ]; then
       echo "ERROR: Build for MACHINE '${MACHINE}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${MACHINE} directory"
@@ -606,21 +605,6 @@ if [ -n "${BMACHINES}" ]; then
     fi
     cd ..
   done
-else
-  BUILD_TARGET_FIRST="$1"
-  if [ -n "${BUILD_TARGET_FIRST}" ]; then
-    echo "Change your scripts to use new -I and -M parameters"
-  fi
-
-  shift
-
-  for arg do BUILD_TARGETS="${BUILD_TARGETS} ${arg}" ; done
-
-  # Ugly hack to pass all build targets in one bitbake call
-  export BBFLAGS="${BBFLAGS} ${BUILD_TARGETS}"
-
-  make ${BUILD_TARGET_FIRST}
-  RESULT+=$?
 fi
 
 print_timestamp "before package-src-uris"
