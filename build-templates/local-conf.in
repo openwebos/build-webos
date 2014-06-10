@@ -32,7 +32,7 @@ DISTRO = "@distro@"
 #
 # Parallelism Options
 #
-# These two options control how much parallelism BitBake should use. The first 
+# These two options control how much parallelism BitBake should use. The first
 # option determines how many tasks bitbake should run in parallel. The default
 # value of 2x the number of cores is that recommended by OE  -- see:
 # http://www.yoctoproject.org/docs/1.4/ref-manual/ref-manual.html#var-BB_NUMBER_THREADS
@@ -40,9 +40,9 @@ DISTRO = "@distro@"
 # by testing whose results are reported here: http://wiki.lgsvl.com/x/QYW0BQ and
 # in [ES-469].
 #
-BB_NUMBER_THREADS = "${@ @bb_number_threads@ if @bb_number_threads@ != 0 else 2*int(bb.utils.cpu_count())}"
+BB_NUMBER_THREADS ?= "${@ @bb_number_threads@ if @bb_number_threads@ != 0 else 2*int(bb.utils.cpu_count())}"
 
-# 
+#
 # The second option controls how many processes make should run in parallel when
 # running compile tasks. The default value of 2x the number of cores is that
 # recommended by OE  -- see:
@@ -51,16 +51,16 @@ BB_NUMBER_THREADS = "${@ @bb_number_threads@ if @bb_number_threads@ != 0 else 2*
 # by testing whose results are reported here: http://wiki.lgsvl.com/x/QYW0BQ and
 # in [ES-469].
 #
-PARALLEL_MAKE = "-j ${@ @parallel_make@ if @parallel_make@ != 0 else 2*int(bb.utils.cpu_count())}"
+PARALLEL_MAKE ?= "-j ${@ @parallel_make@ if @parallel_make@ != 0 else 2*int(bb.utils.cpu_count())}"
 
 #
 # Building with icecc is enabled by default. the following configures webOS image
 # to build with icecc
 #
 # To disable ICECC, set ICECC_DISABLED to 1
-ICECC_DISABLED = "@icecc_disable_enable@"
+ICECC_DISABLED ?= "@icecc_disable_enable@"
 # Number of parallel make threads
-ICECC_PARALLEL_MAKE = "-j ${@ @icecc_parallel_make@ if @icecc_parallel_make@ != 0 else 4*int(bb.utils.cpu_count())}"
+ICECC_PARALLEL_MAKE ?= "-j ${@ @icecc_parallel_make@ if @icecc_parallel_make@ != 0 else 4*int(bb.utils.cpu_count())}"
 # To use alterantive icecc installation specify the location of icecc executable below.
 @alternative_icecc_installation@
 # To exclude components/recipes from icecc build add its name to the space separated list below
@@ -194,7 +194,7 @@ EXTRA_IMAGE_FEATURES ?= ""
 # NOTE: mklibs also needs to be explicitly enabled for a given image, see local.conf.extended
 USER_CLASSES ?= "@buildhistory_class@ buildstats image-mklibs"
 
-BUILDHISTORY_DIR = "${TOPDIR}/buildhistory"
+BUILDHISTORY_DIR ?= "${TOPDIR}/buildhistory"
 BUILDHISTORY_COMMIT ?= "@buildhistory_enabled@"
 @buildhistory_author_assignment@
 
@@ -493,9 +493,5 @@ TCLIBCAPPEND := ""
 
 
 # private internal component mirror
-OPENWEBOS_GIT_REPO = "@privateinternalcomponentmirror@"
-
-# Rich suspects these are now unused:
-COVERAGE_BUILD = "0"
-
-
+# Note that this setting will be overridden by the assignment in webos-repositories.inc.
+OPENWEBOS_GIT_REPO ?= "@privateinternalcomponentmirror@"
