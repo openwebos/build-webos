@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.16"
+SCRIPT_VERSION="3.3.18"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -240,16 +240,23 @@ else
   # It's not expected that this script would ever be used for Open webOS as is,
   # but the tests for it have been added as a guide for creating that edition.
   case ${JOB_NAME} in
-    *-official*)
+    *-official-*)
        job_type="official"
        ;;
 
+    *-official.nonMP*)
+       job_type="official"
+       ;;
     clean-engineering-*)
        # it cannot be verf or engr, because clean builds are managing layer checkouts alone
        job_type="clean"
        ;;
 
     *-engineering-*)
+       job_type="engr"
+       ;;
+
+    *-engineering.MP*)
        job_type="engr"
        ;;
 
