@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.20"
+SCRIPT_VERSION="3.3.21"
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
 BUILD_REPO="build-webos"
@@ -176,7 +176,7 @@ while true ; do
     -m|--manifest-path) echo "-m|--manifest-path is ignored now, you should remove it from your script" ; shift 2 ;;
     -I|--images) IMAGES="$2" ; shift 2 ;;
     -T|--targets) TARGETS="$2" ; shift 2 ;;
-    -M|--machines) MACHINES="$2" ; shift 2 ;;
+    -M|--machines) BMACHINES="$2" ; shift 2 ;;
     -b|--bom) CREATE_BOM="Y" ; shift ;;
     -s|--signatures) SIGNATURES="Y" ; shift ;;
     -h|--help) showusage ; shift ;;
@@ -349,7 +349,7 @@ else
 fi
 
 # Generate BOM files with metadata checked out by mcf (pinned versions)
-if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
+if [ -n "${CREATE_BOM}" -a -n "${BMACHINES}" ]; then
   TIMESTAMP=`date +%s`
   TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
   TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
@@ -361,15 +361,15 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
     # there is no logic for using different revisions than weboslayers.py
     BOM_FILE_SUFFIX="-before"
   fi
-  for M in ${MACHINES}; do
-    if [ ! -d BUILD-${M} ]; then
-      echo "ERROR: Build for MACHINE '${M}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${M} directory"
+  for MACHINE in ${BMACHINES}; do
+    if [ ! -d BUILD-${MACHINE} ]; then
+      echo "ERROR: Build for MACHINE '${MACHINE}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${MACHINE} directory"
       continue
     fi
-    cd BUILD-${M};
+    cd BUILD-${MACHINE};
     . bitbake.rc
     for I in ${IMAGES} ${TARGETS}; do
-      generate_bom "${M}" "${I}" "${BBFLAGS}" "bom${BOM_FILE_SUFFIX}.txt"
+      generate_bom "${MACHINE}" "${I}" "${BBFLAGS}" "bom${BOM_FILE_SUFFIX}.txt"
     done
     cd ..
   done
@@ -405,7 +405,7 @@ if [ "$job_type" = "clean" ] ; then
 fi
 
 # Generate BOM files again, this time with metadata possibly different for engineering and verification builds
-if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
+if [ -n "${CREATE_BOM}" -a -n "${BMACHINES}" ]; then
   if [ "$job_type" = "verf" -o "$job_type" = "mlverf" -o "$job_type" = "integ" -o "$job_type" = "engr" -o "$job_type" = "clean" ] ; then
     TIMESTAMP=`date +%s`
     TIMEDIFF=`expr $TIMESTAMP - $TIMESTAMP_OLD`
@@ -413,18 +413,18 @@ if [ -n "${CREATE_BOM}" -a -n "${MACHINES}" ]; then
     TIMESTAMP_OLD=$TIMESTAMP
     printf "TIME: build.sh before 2nd bom: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
-    for M in ${MACHINES}; do
-      if [ ! -d BUILD-${M} ]; then
-        echo "ERROR: Build for MACHINE '${M}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${M} directory"
+    for MACHINE in ${BMACHINES}; do
+      if [ ! -d BUILD-${MACHINE} ]; then
+        echo "ERROR: Build for MACHINE '${MACHINE}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${MACHINE} directory"
         continue
       fi
-      cd BUILD-${M};
+      cd BUILD-${MACHINE};
       . bitbake.rc
       for I in ${IMAGES} ${TARGETS}; do
-        generate_bom "${M}" "${I}" "${BBFLAGS}" "bom-after.txt"
-        diff ${ARTIFACTS}/${M}/${I}/bom-before.txt \
-             ${ARTIFACTS}/${M}/${I}/bom-after.txt \
-           > ${ARTIFACTS}/${M}/${I}/bom-diff.txt
+        generate_bom "${MACHINE}" "${I}" "${BBFLAGS}" "bom-after.txt"
+        diff ${ARTIFACTS}/${MACHINE}/${I}/bom-before.txt \
+             ${ARTIFACTS}/${MACHINE}/${I}/bom-after.txt \
+           > ${ARTIFACTS}/${MACHINE}/${I}/bom-diff.txt
       done
       cd ..
     done
@@ -437,18 +437,18 @@ TIMEDIFF_START=`expr $TIMESTAMP - $TIMESTAMP_START`
 TIMESTAMP_OLD=$TIMESTAMP
 printf "TIME: build.sh before signatures: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
-if [ -n "${SIGNATURES}" -a -n "${MACHINES}" ]; then
-  for M in ${MACHINES}; do
-    if [ ! -d BUILD-${M} ]; then
-      echo "ERROR: Build for MACHINE '${M}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${M} directory"
+if [ -n "${SIGNATURES}" -a -n "${BMACHINES}" ]; then
+  for MACHINE in ${BMACHINES}; do
+    if [ ! -d BUILD-${MACHINE} ]; then
+      echo "ERROR: Build for MACHINE '${MACHINE}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${MACHINE} directory"
       continue
     fi
-    cd BUILD-${M};
+    cd BUILD-${MACHINE};
     . bitbake.rc
-    mkdir -p "${ARTIFACTS}/${M}" || true
-    # normally this is executed for all MACHINEs togethere, but we're using MACHINE-specific BSP layers
-    ../oe-core/scripts/sstate-diff-machines.sh --tmpdir=. --targets="${IMAGES} ${TARGETS}" --machines="${M}"
-    tar cjf ${ARTIFACTS}/${M}/sstate-diff.tar.bz2 sstate-diff --remove-files
+    mkdir -p "${ARTIFACTS}/${MACHINE}" || true
+    # normally this is executed for all MACHINEs together, but we're using MACHINE-specific BSP layers
+    ../oe-core/scripts/sstate-diff-machines.sh --tmpdir=. --targets="${IMAGES} ${TARGETS}" --machines="${MACHINE}"
+    tar cjf ${ARTIFACTS}/${MACHINE}/sstate-diff.tar.bz2 sstate-diff --remove-files
     cd ..
   done
 fi
@@ -475,14 +475,14 @@ TIMESTAMP_OLD=$TIMESTAMP
 printf "TIME: build.sh before main $JOB_NAME build: $TIMESTAMP, +$TIMEDIFF, +$TIMEDIFF_START\n" | tee -a ${BUILD_TIME_LOG}
 
 FIRST_IMAGE=
-if [ -n "${MACHINES}" ]; then
-  for M in ${MACHINES}; do
-    if [ ! -d BUILD-${M} ]; then
-      echo "ERROR: Build for MACHINE '${M}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${M} directory"
+if [ -n "${BMACHINES}" ]; then
+  for MACHINE in ${BMACHINES}; do
+    if [ ! -d BUILD-${MACHINE} ]; then
+      echo "ERROR: Build for MACHINE '${MACHINE}' was requested in build.sh parameter, but mcf haven't prepared BUILD-${MACHINE} directory"
       RESULT+=1 # let it continue to build other machines, but in the end report error code
       continue
     fi
-    cd BUILD-${M};
+    cd BUILD-${MACHINE};
     . bitbake.rc
     /usr/bin/time -f "$TIME_STR" bitbake ${BBFLAGS} ${IMAGES} ${TARGETS} 2>&1 | tee /dev/stderr | grep '^TIME:' >> ${BUILD_TIME_LOG}
 
@@ -497,50 +497,50 @@ if [ -n "${MACHINES}" ]; then
     # Collect exit codes to return them from this script (Use PIPESTATUS to read return code from bitbake, not from added tee)
     RESULT+=${PIPESTATUS[0]}
 
-    mkdir -p "${ARTIFACTS}/${M}" || true
+    mkdir -p "${ARTIFACTS}/${MACHINE}" || true
     if [ -e qa.log ]; then
-      cp qa.log ${ARTIFACTS}/${M} || true
+      cp qa.log ${ARTIFACTS}/${MACHINE} || true
       # show them in console log so they are easier to spot (without downloading qa.log from artifacts
       echo "WARN: Following QA issues were found:"
       cat qa.log
     else
       echo "NOTE: No QA issues were found."
     fi
-    cp WEBOS_BOM_data.pkl ${ARTIFACTS}/${M} || true
-    grep "Elapsed time" buildstats/*/*/*/* | sed 's/^.*\/\(.*\): Elapsed time: \(.*\)$/\2 \1/g' | sort -n | tail -n 20 | tee -a ${ARTIFACTS}/${M}/top20buildstats.txt
-    tar cjf ${ARTIFACTS}/${M}/buildstats.tar.bz2 buildstats
+    cp WEBOS_BOM_data.pkl ${ARTIFACTS}/${MACHINE} || true
+    grep "Elapsed time" buildstats/*/*/*/* | sed 's/^.*\/\(.*\): Elapsed time: \(.*\)$/\2 \1/g' | sort -n | tail -n 20 | tee -a ${ARTIFACTS}/${MACHINE}/top20buildstats.txt
+    tar cjf ${ARTIFACTS}/${MACHINE}/buildstats.tar.bz2 buildstats
     for I in ${IMAGES}; do
-      mkdir -p "${ARTIFACTS}/${M}/${I}" || true
+      mkdir -p "${ARTIFACTS}/${MACHINE}/${I}" || true
       # we store only tar.gz, vmdk.zip and .epk images
       # and we don't publish kernel images anymore
-      if ls deploy/images/${I}-${M}-*.vmdk >/dev/null 2>/dev/null; then
+      if ls deploy/images/${I}-${MACHINE}-*.vmdk >/dev/null 2>/dev/null; then
         if type zip >/dev/null 2>/dev/null; then
           # zip vmdk images if they exists
-          find deploy/images/${I}-${M}-*.vmdk -exec zip -j {}.zip {} \; || true
-          mv deploy/images/${I}-${M}-*.vmdk.zip ${ARTIFACTS}/${M}/${I}/ || true
+          find deploy/images/${I}-${MACHINE}-*.vmdk -exec zip -j {}.zip {} \; || true
+          mv deploy/images/${I}-${MACHINE}-*.vmdk.zip ${ARTIFACTS}/${MACHINE}/${I}/ || true
         else
           # report failure and publish vmdk
           RESULT+=1
-          mv deploy/images/${I}-${M}-*.vmdk ${ARTIFACTS}/${M}/${I}/ || true
+          mv deploy/images/${I}-${MACHINE}-*.vmdk ${ARTIFACTS}/${MACHINE}/${I}/ || true
         fi
         # copy webosvbox if we've built vmdk image
-        cp ../meta-webos/scripts/webosvbox ${ARTIFACTS}/${M} || true
-      elif ls deploy/images/${I}-${M}-*.tar.gz >/dev/null 2>/dev/null \
-        || ls deploy/images/${I}-${M}-*.epk    >/dev/null 2>/dev/null; then
-        if ls deploy/images/${I}-${M}-*.tar.gz >/dev/null 2>/dev/null; then
-          mv  deploy/images/${I}-${M}-*.tar.gz ${ARTIFACTS}/${M}/${I}/
+        cp ../meta-webos/scripts/webosvbox ${ARTIFACTS}/${MACHINE} || true
+      elif ls deploy/images/${I}-${MACHINE}-*.tar.gz >/dev/null 2>/dev/null \
+        || ls deploy/images/${I}-${MACHINE}-*.epk    >/dev/null 2>/dev/null; then
+        if ls deploy/images/${I}-${MACHINE}-*.tar.gz >/dev/null 2>/dev/null; then
+          mv  deploy/images/${I}-${MACHINE}-*.tar.gz ${ARTIFACTS}/${MACHINE}/${I}/
         fi
-        if ls deploy/images/${I}-${M}-*.epk >/dev/null 2>/dev/null; then
-          mv  deploy/images/${I}-${M}-*.epk ${ARTIFACTS}/${M}/${I}/
+        if ls deploy/images/${I}-${MACHINE}-*.epk >/dev/null 2>/dev/null; then
+          mv  deploy/images/${I}-${MACHINE}-*.epk ${ARTIFACTS}/${MACHINE}/${I}/
         fi
       elif ls deploy/sdk/${I}-*.sh >/dev/null 2>/dev/null; then
-        mv    deploy/sdk/${I}-*.sh ${ARTIFACTS}/${M}/${I}/
+        mv    deploy/sdk/${I}-*.sh ${ARTIFACTS}/${MACHINE}/${I}/
       else
         echo "WARN: No recognized IMAGE_FSTYPES to copy to build artifacts"
       fi
       FOUND_IMAGE="false"
       # Add .md5 files for image files, if they are missing or older than image file
-      for IMG_FILE in ${ARTIFACTS}/${M}/${I}/*.vmdk* ${ARTIFACTS}/${M}/${I}/*.tar.gz ${ARTIFACTS}/${M}/${I}/*.epk ${ARTIFACTS}/${M}/${I}/*.sh; do
+      for IMG_FILE in ${ARTIFACTS}/${MACHINE}/${I}/*.vmdk* ${ARTIFACTS}/${MACHINE}/${I}/*.tar.gz ${ARTIFACTS}/${MACHINE}/${I}/*.epk ${ARTIFACTS}/${MACHINE}/${I}/*.sh; do
         if echo $IMG_FILE | grep -q "\.md5$"; then
           continue
         fi
@@ -565,10 +565,10 @@ if [ -n "${MACHINES}" ]; then
             cp -a $d/${I} ${ARTIFACTS}/$target_tunepkgarch/
           done
         else
-          if [ -f ../buildhistory/images/${M}/eglibc/${I}/build-id.txt ]; then
-            cp ../buildhistory/images/${M}/eglibc/${I}/build-id.txt ${ARTIFACTS}/${M}/${I}/build-id.txt
+          if [ -f ../buildhistory/images/${MACHINE}/eglibc/${I}/build-id.txt ]; then
+            cp ../buildhistory/images/${MACHINE}/eglibc/${I}/build-id.txt ${ARTIFACTS}/${MACHINE}/${I}/build-id.txt
           else
-            cp ../buildhistory/images/${M}/eglibc/${I}/build-id ${ARTIFACTS}/${M}/${I}/build-id.txt
+            cp ../buildhistory/images/${MACHINE}/eglibc/${I}/build-id ${ARTIFACTS}/${MACHINE}/${I}/build-id.txt
           fi
           if [ -z "$FIRST_IMAGE" ] ; then
             # store build-id.txt from first IMAGE and first MACHINE as representant of whole build for InfoBadge
@@ -577,15 +577,15 @@ if [ -n "${MACHINES}" ]; then
             # we should be able to use:
             # manager.addInfoBadge("${manager.build.getWorkspace().child('BUILD-ARTIFACTS/build-id.txt').readToString()}")
             # in all builds (making BUILD_IMAGES/BUILD_MACHINE changes less error-prone)
-            FIRST_IMAGE="${M}/${I}"
-            cp ${ARTIFACTS}/${M}/${I}/build-id.txt ${ARTIFACTS}/build-id.txt
+            FIRST_IMAGE="${MACHINE}/${I}"
+            cp ${ARTIFACTS}/${MACHINE}/${I}/build-id.txt ${ARTIFACTS}/build-id.txt
           fi
-          cp ../buildhistory/images/${M}/eglibc/${I}/image-info.txt ${ARTIFACTS}/${M}/${I}/image-info.txt
-          cp ../buildhistory/images/${M}/eglibc/${I}/files-in-image.txt ${ARTIFACTS}/${M}/${I}/files-in-image.txt
-          cp ../buildhistory/images/${M}/eglibc/${I}/installed-packages.txt ${ARTIFACTS}/${M}/${I}/installed-packages.txt
-          cp ../buildhistory/images/${M}/eglibc/${I}/installed-package-sizes.txt ${ARTIFACTS}/${M}/${I}/installed-package-sizes.txt
-          if [ -e ../buildhistory/images/${M}/eglibc/${I}/installed-package-file-sizes.txt ] ; then
-            cp ../buildhistory/images/${M}/eglibc/${I}/installed-package-file-sizes.txt ${ARTIFACTS}/${M}/${I}/installed-package-file-sizes.txt
+          cp ../buildhistory/images/${MACHINE}/eglibc/${I}/image-info.txt ${ARTIFACTS}/${MACHINE}/${I}/image-info.txt
+          cp ../buildhistory/images/${MACHINE}/eglibc/${I}/files-in-image.txt ${ARTIFACTS}/${MACHINE}/${I}/files-in-image.txt
+          cp ../buildhistory/images/${MACHINE}/eglibc/${I}/installed-packages.txt ${ARTIFACTS}/${MACHINE}/${I}/installed-packages.txt
+          cp ../buildhistory/images/${MACHINE}/eglibc/${I}/installed-package-sizes.txt ${ARTIFACTS}/${MACHINE}/${I}/installed-package-sizes.txt
+          if [ -e ../buildhistory/images/${MACHINE}/eglibc/${I}/installed-package-file-sizes.txt ] ; then
+            cp ../buildhistory/images/${MACHINE}/eglibc/${I}/installed-package-file-sizes.txt ${ARTIFACTS}/${MACHINE}/${I}/installed-package-file-sizes.txt
           fi
         fi
       fi
@@ -593,7 +593,7 @@ if [ -n "${MACHINES}" ]; then
     if [ -d deploy/sources ] ; then
       # exclude diff.gz files, because with old archiver they contain whole source (nothing creates .orig directory)
       # see http://lists.openembedded.org/pipermail/openembedded-core/2013-December/087729.html
-      tar czf ${ARTIFACTS}/${M}/sources.tar.gz deploy/sources --exclude \*.diff.gz
+      tar czf ${ARTIFACTS}/${MACHINE}/sources.tar.gz deploy/sources --exclude \*.diff.gz
     fi
     cd ..
   done
