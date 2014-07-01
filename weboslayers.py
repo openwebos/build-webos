@@ -46,11 +46,13 @@
 #
 # working-dir = Alternative directory for the layer.
 #
-# The name of the distribution is also defined in this file.
+# The name of the distribution is also defined in this file
+# along with a list of the valid MACHINE-s
 #
 
 Distribution = "webos"
 
+# Supported MACHINE-s
 Machines = ['qemux86', 'qemuarm']
 
 # github.com/openembedded repositories are read-only mirrors of the authoritative
