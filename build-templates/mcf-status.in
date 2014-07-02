@@ -24,8 +24,7 @@
 
 set -e
 
-exec @prog@ -v \
-    --command configure \
+exec @prog@ \
     --enable-bb-number-threads=@bb_number_threads@ \
     --enable-parallel-make=@parallel_make@ \
     @icecc_disable_enable_mcf@ \
