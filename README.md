@@ -11,7 +11,7 @@ This repository contains the top level code that aggregates the various [OpenEmb
 
 Cloning
 =======
-To access Git repositories, you may need to register your SSH key with GitHub. For help on doing this, visit [Generating SSH Keys] (https://help.github.com/articles/generating-ssh-keys). 
+To access Git repositories, you may need to register your SSH key with GitHub. For help on doing this, visit [Generating SSH Keys] (https://help.github.com/articles/generating-ssh-keys).
 
 Set up build-webos by cloning its Git repository:
 
@@ -34,7 +34,7 @@ Also, the bitbake sanity check will issue a warning if you're not running under 
 
 Building
 ========
-To configure the build for the qemux86 emulator and to fetch the Git submodule sources:
+To configure the build for the qemux86 emulator and to fetch the sources:
 
     $ ./mcf -p 0 -b 0 qemux86
 
@@ -52,7 +52,7 @@ Running
 To run the resulting build in the qemux86 emulator, enter:
 
     $ cd BUILD-qemux86
-    $ source bitbake.rc 
+    $ source bitbake.rc
     $ runqemu webos-image qemux86 qemuparams="-m 512" kvm serial
 
 You will be prompted by sudo for a password:
@@ -63,11 +63,11 @@ You will be prompted by sudo for a password:
     ROOTFS: [.../BUILD-qemux86/deploy/images/webos-image-qemux86.ext3]
     FSTYPE: [ext3]
     Setting up tap interface under sudo
-    [sudo] password for <user>: 
+    [sudo] password for <user>:
 
 A window entitled QEMU will appear with a login prompt. Don't do anything. A bit later, the Open webOS lock screen will appear. Use your mouse to drag up the yellow lock icon. Welcome to (emulated) Open webOS!
 
-To go into Card View after launching an app, press your keyboard’s `HOME` key. 
+To go into Card View after launching an app, press your keyboard’s `HOME` key.
 
 To start up a console on the emulator, don't attempt to login at the prompt that appears in the console from which you launched runqemu. Instead, ssh into it as root (no password):
 
@@ -79,7 +79,7 @@ Each new image appears to ssh as a new machine with the same IP address as the p
 
     $ ssh-keygen -f ~/.ssh/known_hosts -R 192.168.7.2
 
-then re-enter the ssh command. 
+then re-enter the ssh command.
 
 To shut down the emulator, startup a console and enter:
 
@@ -96,14 +96,14 @@ The connection will be dropped:
 
 and the QEMU window will close. (If this doesn't happen, just close the QEMU window manually.) Depending on how long your emulator session lasted, you may be prompted again by sudo for a password:
 
-    [sudo] password for <user>: 
+    [sudo] password for <user>:
     Set 'tap0' nonpersistent
     Releasing lockfile of preconfigured tap device 'tap0'
 
 
 Images
 ======
-The following images can be built: 
+The following images can be built:
 
 - `webos-image`: The production Open webOS image.
 - `webos-image-devel`: Adds various development tools to `webos-image`, including gdb and strace. See `packagegroup-core-tools-debug` and `packagegroup-core-tools-profile` in `oe-core` and `packagegroup-webos-test` in `meta-webos` for the complete list.
@@ -130,7 +130,7 @@ To clean a component's build artifacts under BUILD-qemux86, enter:
     $ make clean-<component-name>
 
 To remove the shared state for a component as well as its build artifacts to ensure it gets rebuilt afresh from its source, enter:
- 
+
     $ make cleanall-<component-name>
 
 Adding new layers
