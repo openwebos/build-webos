@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.25"
+SCRIPT_VERSION="3.3.26"
 SCRIPT_NAME=`basename $0`
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
@@ -320,18 +320,14 @@ if [ ! -f "Makefile" ] ; then
 fi
 
 [ -n "${BUILD_SITE}" -a -n "${BUILD_JENKINS_SERVER}" ] || set_build_site_and_server
-[ -n "${BUILD_TYPE}" ] || set_build_type
+[ -n "${BUILD_JOB}" ] || set_build_job
 [ -n "${BUILD_BUILDHISTORY_PUSH_REF}" ] || set_buildhistory_branch
-
 
 if [ -z "${BUILD_SITE}" -o "${BUILD_JENKINS_SERVER}" = "anaconda" ]; then
   # Let the distro determine the policy on setting WEBOS_DISTRO_BUILD_ID when builds
   # are unofficial
-  # Don't unset BUILDHISTORY_BRANCH so that someone can use build.sh to maintain a local buildhistory repo.
   unset WEBOS_DISTRO_BUILD_ID
 else
-  [ -n "${BUILD_JOB}" ] || set_build_job
-
   # If this is an official build, no BUILD_JOB prefix appears in
   # WEBOS_DISTRO_BUILD_ID regardless of the build site.
   if [ "${BUILD_JOB}" = "official" ]; then
