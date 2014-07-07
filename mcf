@@ -25,7 +25,7 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.13"
+__version__ = "4.0.14"
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,23 @@ CLEAN = False
 TRACE = False
 REMOTE = "origin"
 SSTATE_MIRRORS = ''
+WEBOSLAYERS = []
+LAYERSPRIORITY = {}
+SUBMISSIONS = {}
+LOCATIONS = {}
+URLS = {}
+PRIORITYORDER = []
+COLLECTION_NAME = {}
+COLLECTION_PATH = {}
+SUMMARYINFO = {}
+BRANCHINFONEW = {}
+BRANCHINFOCURRENT = {}
+COMMITIDSNEW = {}
+COMMITIDSCURRENT = {}
+TAGSINFONEW = {}
+REPOPATCHDIR = {}
+DISTRO = None
+SUPPORTED_MACHINES = []
 
 def echo_check_call(todo, verbosity=False):
     if verbosity or TRACE:
@@ -219,37 +236,27 @@ def getopts():
 
     options = parser.parse_args(arglist)
     if mcfcommand in ('configure','update+configure') and options.sstatemirror:
-        # /PATH is automatically added when generating SSTATE_MIRRORS value
-        # verify and show error
-        SSTATE_MIRRORS = "SSTATE_MIRRORS ?= \" \\\n"
-        for m in options.sstatemirror:
-            if m.endswith("/PATH"):
-                logger.error("sstatemirror entry '%s', already ends with '/PATH', remove that" % m)
-                sys.exit(1)
-            if m.endswith("/"):
-                logger.error("sstatemirror entry '%s', ends with '/', remove that" % m)
-                sys.exit(1)
-            SSTATE_MIRRORS += "file://.* %s/PATH \\n \\\n"
-        SSTATE_MIRRORS += "\"\n"
+        process_sstatemirror_option(options)
     return options
 
-WEBOSLAYERS = []
-LAYERSPRIORITY = {}
-SUBMISSIONS = {}
-LOCATIONS = {}
-URLS = {}
-PRIORITYORDER = []
-COLLECTION_NAME = {}
-COLLECTION_PATH = {}
-SUMMARYINFO = {}
-BRANCHINFONEW = {}
-BRANCHINFOCURRENT = {}
-COMMITIDSNEW = {}
-COMMITIDSCURRENT = {}
-TAGSINFONEW = {}
-REPOPATCHDIR = {}
-DISTRO = None
-SUPPORTED_MACHINES = []
+def process_sstatemirror_option(options):
+    """
+       Sets global variable SSTATE_MIRRORS based on list of mirrors in options.sstatemirror
+
+       /PATH suffix is automatically added when generating SSTATE_MIRRORS value
+       verify that user didn't already include it and show error if he did
+    """
+    global SSTATE_MIRRORS
+    SSTATE_MIRRORS = "SSTATE_MIRRORS ?= \" \\\n"
+    for m in options.sstatemirror:
+        if m.endswith("/PATH"):
+            logger.error("sstatemirror entry '%s', already ends with '/PATH', remove that" % m)
+            sys.exit(1)
+        if m.endswith("/"):
+            logger.error("sstatemirror entry '%s', ends with '/', remove that" % m)
+            sys.exit(1)
+        SSTATE_MIRRORS += "file://.* %s/PATH \\n \\\n" % m
+    SSTATE_MIRRORS += "\"\n"
 
 def _icecc_installed():
     try:
