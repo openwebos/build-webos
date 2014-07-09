@@ -41,5 +41,4 @@ exec @prog@ \
     @network@ \
     @fetchpremirroronlyoption@ \
     @generatemirrortarballsoption@ \
-    @privateinternalcomponentmirroroption@ \
     @machines@

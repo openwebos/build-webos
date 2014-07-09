@@ -25,7 +25,7 @@ from time import gmtime, strftime
 import shutil
 import glob
 
-__version__ = "4.0.14"
+__version__ = "4.0.15"
 
 logger = logging.getLogger(__name__)
 
@@ -210,15 +210,6 @@ def getopts():
 
         tarballs.add_argument('--enable-generate-mirror-tarballs', dest='generatemirrortarballs', action='store_true', default=False,
                               help='generate tarballs suitable for mirroring (default: False)')
-
-        private = mirrors.add_mutually_exclusive_group()
-        private.add_argument('--disable-private-internal-component-mirror', dest='privateinternalcomponentmirror', action='store_false',
-                          default=False, help='disable the private internal component mirror (default: disabled)')
-
-        private.add_argument('--enable-private-internal-component-mirror', dest='privateinternalcomponentmirror', action='store_false',
-                          default=False, help='enable the private internal component mirror (default: disabled). '+
-                                              'This option is deprecated and ignored. It is left defined to avoid '+
-                                              'breaking any existing scripts.')
 
         buildhistory = parser.add_argument_group('Buildhistory')
 
@@ -836,8 +827,6 @@ def configure_build(srcdir, options):
         ['@premirror_assignment@',           'SOURCE_MIRROR_URL ?= "%s"' % options.premirror   if options.premirror     else ''],
         ['@premirror_inherit@',              'INHERIT += "own-mirrors"'                        if options.premirror     else ''],
         ['@sstatemirror_assignment@',        SSTATE_MIRRORS                                    if options.sstatemirror  else ''],
-        ['@privateinternalcomponentmirror@', 'git://github-mirror.palm.com/openwebos'          if options.privateinternalcomponentmirror
-                                        else 'git://github.com/openwebos'],
         ['@premirror@', options.premirror],
         ['@sstatemirror@', ' '.join(options.sstatemirror) if options.sstatemirror else ''],
         ['@buildhistoryauthor@', options.buildhistoryauthor],
@@ -845,7 +834,6 @@ def configure_build(srcdir, options):
         ['@network@',                              '--%s-network'                           % ('enable' if options.network                        else 'disable')],
         ['@fetchpremirroronlyoption@',             '--%s-fetch-premirror-only'              % ('enable' if options.fetchpremirroronly             else 'disable')],
         ['@generatemirrortarballsoption@',         '--%s-generate-mirror-tarballs'          % ('enable' if options.generatemirrortarballs         else 'disable')],
-        ['@privateinternalcomponentmirroroption@', '--%s-private-internal-component-mirror' % ('enable' if options.privateinternalcomponentmirror else 'disable')],
         ['@machines@', ' '.join(options.MACHINE)],
         ['@machines_only@', ' '.join([i.split(':')[0] for i in options.MACHINE])],
         ['@distro@', DISTRO],

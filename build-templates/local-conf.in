@@ -490,8 +490,3 @@ CONF_VERSION = "1"
 
 # Other local settings
 TCLIBCAPPEND := ""
-
-
-# private internal component mirror
-# Note that this setting will be overridden by the assignment in webos-repositories.inc.
-OPENWEBOS_GIT_REPO ?= "@privateinternalcomponentmirror@"
