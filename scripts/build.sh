@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="3.3.26"
+SCRIPT_VERSION="3.3.28"
 SCRIPT_NAME=`basename $0`
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
@@ -43,7 +43,7 @@ BUILD_BUILDHISTORY_BRANCH=
 # and form paths based on that
 CALLDIR=${PWD}
 
-BUILD_TIMESTAMP_START=`date +%s`
+BUILD_TIMESTAMP_START=`date -u +%s`
 BUILD_TIMESTAMP_OLD=$BUILD_TIMESTAMP_START
 
 TIME_STR="TIME: %e %S %U %P %c %w %R %F %M %x %C"
@@ -69,8 +69,8 @@ mkdir -p "${ARTIFACTS}"
 BUILD_TIME_LOG=${BUILD_TOPDIR}/time.txt
 
 function print_timestamp {
-  BUILD_TIMESTAMP=`date +%s`
-  BUILD_TIMESTAMPH=`date +%Y%m%dT%TZ`
+  BUILD_TIMESTAMP=`date -u +%s`
+  BUILD_TIMESTAMPH=`date -u +%Y%m%dT%TZ`
 
   local BUILD_TIMEDIFF=`expr ${BUILD_TIMESTAMP} - ${BUILD_TIMESTAMP_OLD}`
   local BUILD_TIMEDIFF_START=`expr ${BUILD_TIMESTAMP} - ${BUILD_TIMESTAMP_START}`
