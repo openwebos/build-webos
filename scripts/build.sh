@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="5.1.0"
+SCRIPT_VERSION="5.1.1"
 SCRIPT_NAME=`basename $0`
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
@@ -493,9 +493,13 @@ else
         cp BUILD/work/${MACHINE}*/${I}/*/*/hdd/boot/syslinux.cfg ${ARTIFACTS}/${MACHINE}/${I}/ 2>/dev/null || echo "INFO: syslinux.cfg doesn't exist, probably using rm_work"
         cp BUILD/work/${MACHINE}*/${I}/*/*/hdd/boot/vmlinuz ${ARTIFACTS}/${MACHINE}/${I}/ 2>/dev/null || echo "INFO: vmlinuz doesn't exist, probably using rm_work"
       elif ls BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.tar.gz >/dev/null 2>/dev/null \
+        || ls BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.ext4.img >/dev/null 2>/dev/null \
         || ls BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.epk    >/dev/null 2>/dev/null; then
         if ls BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.tar.gz >/dev/null 2>/dev/null; then
           mv  BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.tar.gz ${ARTIFACTS}/${MACHINE}/${I}/
+        fi
+        if ls BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.ext4.img >/dev/null 2>/dev/null; then
+          mv  BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.ext4.img ${ARTIFACTS}/${MACHINE}/${I}/
         fi
         if ls BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.epk >/dev/null 2>/dev/null; then
           mv  BUILD/deploy/images/${MACHINE}/${I}-${MACHINE}-*.epk ${ARTIFACTS}/${MACHINE}/${I}/
