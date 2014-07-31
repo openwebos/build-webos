@@ -38,7 +38,7 @@ fi
 export BUILDDIR="${TOPDIR}/BUILD"
 export BB_ENV_EXTRAWHITE="MACHINE DISTRO TCMODE TCLIBC http_proxy ftp_proxy https_proxy all_proxy ALL_PROXY no_proxy SSH_AGENT_PID SSH_AUTH_SOCK BB_SRCREV_POLICY SDKMACHINE BB_NUMBER_THREADS PARALLEL_MAKE GIT_PROXY_COMMAND GIT_PROXY_IGNORE SOCKS5_PASSWD SOCKS5_USER WEBOS_DISTRO_BUILD_ID PSEUDO_DISABLED PSEUDO_BUILD"
 
-export MACHINES="@machines@"
-export MACHINE="@machine@"
-export DISTRO="@distro@"
+[ -z "${MACHINES}" ] && export MACHINES="@machines@"
+[ -z "${MACHINE}" ] && export MACHINE="@machine@"
+[ -z "${DISTRO}" ] && export DISTRO="@distro@"
 echo "Altered environment for ${MACHINE}@${DISTRO} development"

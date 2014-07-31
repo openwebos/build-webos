@@ -151,11 +151,11 @@ BITBAKE := . $(srcdir)/oe-init-build-env && bitbake
 ### intended for command line use
 BBFLAGS =
 
-%:; $(BITBAKE) $(BBFLAGS) $*
+%:; for MACHINE in $(machines) ; do $(BITBAKE) $(BBFLAGS) $*; done
 
 define convenience
-$(1)-$(2)-%:; $(TIME) $(MAKE) $(2)-$$*
-$(1)-%:; $$(BITBAKE) $(BBFLAGS) -c $(1) $$*
+$(1)-$(2)-%:; export MACHINE=$(1) && $(TIME) $(MAKE) $(2)-$$*
+$(1)-%:; for MACHINE in $(machines) ; do $$(BITBAKE) $(BBFLAGS) -c $(1) $$*; done
 endef
 
 conveniences := \
