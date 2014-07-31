@@ -16,120 +16,14 @@
 # limitations under the License.
 
 srcdir := @srcdir@
-vpath := $(srcdir)
 machines := @machines@
 
 TIME := time
-SSH := /usr/bin/ssh
-
-CONTINUOUS_BUILD_MARK :=
 
 webos-image:
 all: webos-image
 
 force:;:
-
-.PHONY: tags
-tags TAGS: force
-	$(srcdir)/scripts/tag_oe.sh
-	(cd $(srcdir)/bitbake && ../scripts/tag_bitbake.sh)
-
-define convenience
-$(1)-$(2)-%:
-	export MACHINE=$(1) && $(TIME) $(MAKE) \
-		CONTINUOUS_BUILD_MARK=$(CONTINUOUS_BUILD_MARK) \
-		BBFLAGS='$(BBFLAGS)' \
-		$(2)-$$* # convenience rule for task $(2) of component $$* for $(1)
-
-remote-$(1)@$(1)-$(2)-%:
-	$(SSH) $(BUILDER$(1)) "cd ${PWD} && $(MAKE) \
-		CONTINUOUS_BUILD_MARK=$(CONTINUOUS_BUILD_MARK) \
-		BBFLAGS='$(BBFLAGS) -S' \
-		$(1)-$(2)-$$*"
-endef
-
-conveniences := \
-	clean \
-	cleanall \
-	cleanreport \
-	cmp \
-	cmpall \
-	compile \
-	configure \
-	fetch \
-	fetchall \
-	install \
-	just \
-	listtasks \
-	package \
-	patch \
-	patchall \
-	report \
-	reportall \
-	sanity \
-	sanityall \
-	thin \
-	thinall \
-	unpack \
-	unpackall \
-
-PWD = $(shell pwd)
-
-define subrule
-BUILDER$(1) := 
-
-ifneq ($(BUILDER$(1)),)
-PREFIX$(1) := remote-$(1)@
-else
-PREFIX$(1) :=
-endif
-
-$(foreach c, $(conveniences),$(eval $(call convenience,$(1),$(c))))
-
-remote-$(1)@$(1)-%:
-	$(TIME) $(SSH) $(BUILDER$(1)) "cd ${PWD} && $(TIME) $(MAKE) \
-		CONTINUOUS_BUILD_MARK=$(CONTINUOUS_BUILD_MARK) \
-		BBFLAGS='$(BBFLAGS) -S' \
-		$(1)-$$*"
-
-$(1)/%:
-	export MACHINE=$(1) && $(TIME) $(MAKE) \
-		CONTINUOUS_BUILD_MARK=$(CONTINUOUS_BUILD_MARK) \
-		BBFLAGS='$(BBFLAGS)' \
-		$$* # component $$* for $(1)
-
-install-$(1):
-	[ -d $(INSTALLDIR)/$(1) ] || mkdir -p $(INSTALLDIR)/$(1)
-	export MACHINE=$(1) && $(TIME) $(MAKE) \
-		CONTINUOUS_BUILD_MARK=$(CONTINUOUS_BUILD_MARK) \
-		BBFLAGS='$(BBFLAGS)' \
-		install \
-		INSTALLDIR=$(INSTALLDIR)/$(1) # target install for $(1)
-
-installnew-$(1):
-	[ -d $(INSTALLDIR)/$(1) ] || mkdir -p $(INSTALLDIR)/$(1)
-	export MACHINE=$(1) && $(TIME) $(MAKE) \
-		CONTINUOUS_BUILD_MARK=$(CONTINUOUS_BUILD_MARK) \
-		BBFLAGS='$(BBFLAGS)' \
-		INSTALLSINCE=$(INSTALLSINCE) \
-		installnew \
-		INSTALLDIR=$(INSTALLDIR)/$(1) # target installnew for $(1)
-endef
-
-$(foreach machine,$(machines),$(eval $(call subrule,$(machine))))
-
-%: $(foreach machine,$(machines),$(PREFIX$(machine))$(machine)/%)
-	: done with $@
-
-install: $(foreach machine,$(machines),install-$(machine))
-	: done with $@
-
-installnew: $(foreach machine,$(machines),installnew-$(machine))
-	: done with $@
-
-clobber:
-	@clobber_dirs@
-	./mcf.status
 
 oe-init-build-env mcf.status Makefile conf/local.conf conf/bblayers.conf: \
 	$(srcdir)/build-templates/oe-init-build-env.in \
@@ -138,12 +32,6 @@ oe-init-build-env mcf.status Makefile conf/local.conf conf/bblayers.conf: \
 	$(srcdir)/build-templates/local-conf.in \
 	$(srcdir)/build-templates/bblayers-conf.in
 	./mcf.status
-
-# should be set on the command line before using "make install"
-INSTALLDIR = /dev/null
-
-RSYNC := /usr/bin/rsync
-RSYNC_FLAGS := -avxq --delete
 
 # everything else is already set by oe-init-build-env
 BITBAKE := . $(srcdir)/oe-init-build-env && bitbake
@@ -162,25 +50,15 @@ conveniences := \
 	clean \
 	cleanall \
 	cleansstate \
-	cleanreport \
-	cmp \
-	cmpall \
 	compile \
 	configure \
 	fetch \
 	fetchall \
 	install \
-	just \
 	listtasks \
 	package \
 	patch \
 	patchall \
-	report \
-	reportall \
-	sanity \
-	sanityall \
-	thin \
-	thinall \
 	unpack \
 	unpackall \
 
@@ -192,13 +70,3 @@ $(foreach c, $(conveniences),$(eval $(call convenience,$(c))))
 # which lets us name "just-install-first" in order to request
 # "install-first".  (Yes, I'm sorry it's complicated.)
 just-%:; $(BITBAKE) $(BBFLAGS) $*
-
-IMAGES := images/*$(CONTINUOUS_BUILD_MARK)*.tar
-
-deploy:
-	[ -d $(INSTALLDIR) ] || mkdir -p $(INSTALLDIR)
-	cd BUILD/deploy && $(RSYNC) $(RSYNC_FLAGS) ipk $(IMAGES) $(INSTALLDIR)
-
-deploynew:
-	[ -d $(INSTALLDIR) ] || mkdir -p $(INSTALLDIR)
-	(cd BUILD/deploy/ipk && tar cf - --newer $(INSTALLSINCE) .) | (cd $(INSTALLDIR) && tar xf -)
