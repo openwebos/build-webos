@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="5.1.1"
+SCRIPT_VERSION="5.1.2"
 SCRIPT_NAME=`basename $0`
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
@@ -588,6 +588,7 @@ echo "NOTE: generating package-srcuris.txt"
 BUILDHISTORY_PACKAGE_SRCURIS="package-srcuris.txt"
 ./meta-webos/scripts/buildhistory-collect-srcuris buildhistory >${BUILDHISTORY_PACKAGE_SRCURIS}
 ./oe-core/scripts/buildhistory-collect-srcrevs buildhistory >>${BUILDHISTORY_PACKAGE_SRCURIS}
+sort -o ${BUILDHISTORY_PACKAGE_SRCURIS} ${BUILDHISTORY_PACKAGE_SRCURIS}
 cp ${BUILDHISTORY_PACKAGE_SRCURIS} ${ARTIFACTS} || true
 
 print_timestamp "before baselines"
