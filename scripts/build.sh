@@ -18,7 +18,7 @@
 #set -x
 
 # Some constants
-SCRIPT_VERSION="5.1.2"
+SCRIPT_VERSION="5.1.3"
 SCRIPT_NAME=`basename $0`
 AUTHORITATIVE_OFFICIAL_BUILD_SITE="svl"
 
@@ -523,6 +523,10 @@ else
           fi
         fi
       done
+      # include .fastboot kernel image when available
+      if ls BUILD/deploy/images/${MACHINE}/*.fastboot >/dev/null 2>/dev/null; then
+        mv  BUILD/deploy/images/${MACHINE}/*.fastboot ${ARTIFACTS}/${MACHINE}/${I}/
+      fi
 
       # copy few interesting buildhistory reports only if the image was really created
       # (otherwise old report from previous build checked out from buildhistory repo could be used)
