@@ -27,7 +27,12 @@
 # default values are provided as comments to show people example syntax. Enabling
 # the option is a question of removing the # character and making any change to the
 # variable as required.
-DISTRO = "@distro@"
+#
+# export DISTRO variable in your shell environment
+#
+# This sets the default distro to be whatever is selected by mcf if no other distro
+# is selected:
+DISTRO ??= "@distro@"
 
 #
 # Parallelism Options
