@@ -64,5 +64,5 @@ webos_layers = [
 ('meta-networking',        6, 'git://github.com/openembedded/meta-oe.git',              '', ''),
 
 ('meta-webos-backports',   9, 'git://github.com/openwebos/meta-webos-backports.git',    'commit=907a089', ''),
-('meta-webos',            10, 'git://github.com/openwebos/meta-webos.git',              'commit=d6d34e2', ''),
+('meta-webos',            10, 'git://github.com/openwebos/meta-webos.git',              'commit=f4c36e8', ''),
 ]
