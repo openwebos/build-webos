@@ -21,7 +21,7 @@
 unset LC_ALL; export LC_ALL
 export LANG=en_US.UTF-8
 
-export TOPDIR=@abs_srcdir@
+export TOPDIR="@abs_srcdir@"
 
 BITBAKEPATH=${TOPDIR}/bitbake/bin
 case "${PATH}" in
