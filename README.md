@@ -11,7 +11,7 @@ This repository contains the top level code that aggregates the various [OpenEmb
 
 Cloning
 =======
-To access Git repositories, you may need to register your SSH key with GitHub. For help on doing this, visit [Generating SSH Keys] (https://help.github.com/articles/generating-ssh-keys).
+To access Git repositories, you may need to register your SSH key with GitHub. For help on doing this, visit [Generating SSH Keys](https://help.github.com/articles/generating-ssh-keys).
 
 Set up build-webos by cloning its Git repository:
 
